@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using UnityEngine;
+using UnityEngine.Rendering;
 using System;
 using Cell3DStruct = WFC3DMapGenerator.WFCStructs.Cell3DStruct;
 using Tile3DStruct = WFC3DMapGenerator.WFCStructs.Tile3DStruct;
@@ -74,6 +75,9 @@ namespace WFC3DMapGenerator
         /// <summary>
         /// Generates the map
         /// </summary>
+        /// <summary>
+        /// Generates the map
+        /// </summary>
         unsafe void Generate()
         {
             ClearNeighbours(ref tileObjects);
@@ -106,32 +110,64 @@ namespace WFC3DMapGenerator
             shader.SetInt("gridDimensionsY", dimensionsY);
             shader.SetInt("gridDimensionsZ", dimensionsZ);
 
+            DispatchMap(1);
+
             // Generate each layer of the map starting from the bottom
-            for (int i = 1; i < dimensionsY - 1; i++)
+            void DispatchMap(int layer)
             {
-                // Loop until the grid is fully collapsed without any incomatibilities
-                if (stopGeneration) break;
-                int attempts = 0;
-                int[] incompatibilities = { 1 };
-                Vector3[] offsets = { new Vector3(0, i, 0), new Vector3(2, i, 0), new Vector3(0, i, 2), new Vector3(2, i, 2) };
-                while (incompatibilities[0] != 0 && !stopGeneration)
+                DispatchLayer();
+
+                void DispatchLayer()
                 {
+                    Debug.Log("Dispatching layer " + layer);
+                    // Loop until the grid is fully collapsed without any incomatibilities
+                    if (stopGeneration)
+                    {
+                        finished = true;
+                        ReleaseMemory();
+                        ClearHierarchy();
+                        return;
+                    }
+
+                    Vector3[] offsets = { new Vector3(0, layer, 0), new Vector3(2, layer, 0), new Vector3(0, layer, 2), new Vector3(2, layer, 2) };
                     outputBuffer.SetData(gridComponentsStructs);
                     stateBuffer.SetData(new int[] { 0 });
+
                     foreach (Vector3 offset in offsets)
                     {
                         shader.SetInt("seed", UnityEngine.Random.Range(0, int.MaxValue));
                         shader.SetVector("offset", offset);
                         shader.Dispatch(shader.FindKernel("CSMain"), Mathf.CeilToInt((float)dimensionsX / 10), 1, Mathf.CeilToInt((float)dimensionsZ / 10));
                     }
+
+                    int[] incompatibilities = new int[1];
                     stateBuffer.GetData(incompatibilities);
-                    attempts++;
+
+                    if (incompatibilities[0] == 0 & layer > 0 & layer < dimensionsY - 1)
+                    {
+                        Debug.Log("Layer " + layer + " finished, dispatching next layer");
+                        layer++;
+                        stateBuffer.SetData(new int[1] { 0 });
+                        outputBuffer.GetData(gridComponentsStructs);
+                        AsyncGPUReadback.Request(outputBuffer, _ => DispatchLayer());
+                    }
+                    else if (incompatibilities[0] != 0)
+                    {
+                        Debug.Log("Generation finished with incompatibilities" + incompatibilities[0]);
+                        stateBuffer.SetData(new int[1] { 0 });
+                        outputBuffer.SetData(gridComponentsStructs);
+                        AsyncGPUReadback.Request(outputBuffer, _ => DispatchLayer());
+                    }
+                    else
+                    {
+                        Debug.Log("Generation finished without incompatibilities");
+                        outputBuffer.GetData(gridComponentsStructs);
+                        InstantiateChunk();
+                        ClearGeneration();
+                        ReleaseMemory();
+                    }
                 }
-                outputBuffer.GetData(gridComponentsStructs);
             }
-            InstantiateChunk();
-            ClearGeneration();
-            ReleaseMemory();
         }
 
         /// <summary>
@@ -183,8 +219,11 @@ namespace WFC3DMapGenerator
                 Transform child = gameObject.transform.GetChild(i);
                 if (child.childCount != 0)
                 {
-                    child.GetChild(0).transform.parent = gameObject.transform;
-                    trash.Add(child.gameObject);
+                    if (child.gameObject.name.Contains("Cell"))
+                    {
+                        child.GetChild(0).parent = gameObject.transform;
+                        trash.Add(child.gameObject);
+                    }
                 }
             }
             foreach (GameObject obj in trash) DestroyImmediate(obj);
