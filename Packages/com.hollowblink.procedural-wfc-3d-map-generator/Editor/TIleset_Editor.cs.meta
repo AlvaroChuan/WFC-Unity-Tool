@@ -1,0 +1,21 @@
+fileFormatVersion: 2
+guid: 89bdd9d3ae7b4344e888f22649a8685c
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences:
+  - m_ViewDataDictionary: {instanceID: 0}
+  - m_UXML: {fileID: 9197481963319205126, guid: 715f8daced07ff84e816a653264c3118, type: 3}
+  - m_SocketHelper: {fileID: 6825188999780009531, guid: e409fceb5d2ac3a4ea16fa569e8a99a4, type: 3}
+  - m_SelectedGameObjectInstance: {instanceID: 0}
+  - m_SocketHelperInstance: {instanceID: 0}
+  - m_SelectedTileset: {instanceID: 0}
+  - m_SelectedTile: {instanceID: 0}
+  - m_SelectedGameObject: {instanceID: 0}
+  - m_EmptyTile: {fileID: 4187426750720118590, guid: 85d911cca2c83ba40b7e12900bb75209, type: 3}
+  - m_SolidTile: {fileID: 2591377062762197173, guid: 23d3dc7cbca008f48ab4740bd402b911, type: 3}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

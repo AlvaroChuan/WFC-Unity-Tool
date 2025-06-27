@@ -1,0 +1,44 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 117a2642f1a883b4292968d8a2edfac4, type: 3}
+  m_Name: Colis
+  m_EditorClassIdentifier: 
+  tiles:
+  - {fileID: -6500136797994931737, guid: 8de46fc3de1edaa4d85083a0272b8e40, type: 3}
+  - {fileID: -4566270994750494717, guid: d593a016376dd024dadffdb86d72a5d4, type: 3}
+  - {fileID: 4823126197895270627, guid: e53baa5c2b698334db104a88eca92825, type: 3}
+  - {fileID: 6260925303499259125, guid: c92e8e112e008034ab33ba35b1574483, type: 3}
+  - {fileID: 2576256256858464212, guid: 6c5be53530fcf374abc1cbe1a544cc8e, type: 3}
+  - {fileID: 3001014191595843075, guid: 8a93d9cd2c8590c4cab9f6b224abe972, type: 3}
+  - {fileID: -636844281645187124, guid: 53940a272ad768c40b163131bed64171, type: 3}
+  - {fileID: 5897138286165042942, guid: b0596f60aab96a04ea3c861362265458, type: 3}
+  - {fileID: -2947153964652329138, guid: 6f6eaac8d3ed5164da8349250e87d367, type: 3}
+  - {fileID: 3178514130583830158, guid: d8a904c0b26c0e644878eb645464e9d7, type: 3}
+  - {fileID: -4341878681850298937, guid: 3ebda278dd5f55c49843247daf0ed849, type: 3}
+  - {fileID: 6941075103677273936, guid: 839085b3b9ca2f648b5405fb1bd9cbdc, type: 3}
+  - {fileID: 4187426750720118590, guid: 85d911cca2c83ba40b7e12900bb75209, type: 3}
+  - {fileID: 2591377062762197173, guid: 23d3dc7cbca008f48ab4740bd402b911, type: 3}
+  tileSize: 2
+  tileCount: 14
+  tileTypes:
+  - Corner
+  - Corner Interior
+  - Wall
+  socketTypes:
+  - Empty
+  - Solid
+  - Grass
+  - Border
+  - Wall top
+  - Wall corner exterior top
+  - Wall corner interior top
+  - Wall lateral

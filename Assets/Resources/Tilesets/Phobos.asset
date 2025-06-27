@@ -1,0 +1,45 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 117a2642f1a883b4292968d8a2edfac4, type: 3}
+  m_Name: Phobos
+  m_EditorClassIdentifier: 
+  tiles:
+  - {fileID: -1344556898655603287, guid: 7117cecfa431b5d47b7a38b81b1af8d2, type: 3}
+  - {fileID: 3508137879400268059, guid: 886ee628282097342b3dab0196741dfa, type: 3}
+  - {fileID: 1096577034410994727, guid: db7b18dbf7b7ce545927235843101ef8, type: 3}
+  - {fileID: -6075016441176561402, guid: d3bcbe7251096a542a55c37942adc8a8, type: 3}
+  - {fileID: 1617253616616429149, guid: c9bfa9f55e1f2ac40a2ae7cb267e9d43, type: 3}
+  - {fileID: -697800861858219285, guid: 091f0c2d7bc8a2a46ae9a04b2070f167, type: 3}
+  - {fileID: -8932303377801567223, guid: 4659c49c78b551e409a23c59ac4d4a31, type: 3}
+  - {fileID: 4514254460213938919, guid: eedb200f74207f540b01c10e06242c6e, type: 3}
+  - {fileID: -4085661094280858419, guid: 06aae6ecb8923ba4bbf8d6cc1f5ba586, type: 3}
+  - {fileID: -4085661094280858419, guid: ef94f99d7b5ca0e4f94b7c6f41c3923d, type: 3}
+  - {fileID: 2196449260308181177, guid: bcd0cc4dd41df1d408332ab8ff4023b5, type: 3}
+  - {fileID: 211373124246387328, guid: 5f4e1b0914d6e734a8f96217bb570224, type: 3}
+  - {fileID: 286297786510083520, guid: 8da28fbc24396e84a9a7bdfdafdc93c3, type: 3}
+  - {fileID: 4187426750720118590, guid: 85d911cca2c83ba40b7e12900bb75209, type: 3}
+  - {fileID: 2591377062762197173, guid: 23d3dc7cbca008f48ab4740bd402b911, type: 3}
+  tileSize: 2
+  tileCount: 15
+  tileTypes:
+  - Corner
+  - Corner Interior
+  - Wall
+  socketTypes:
+  - Empty
+  - Solid
+  - Grass
+  - Border
+  - Wall top
+  - Wall corner exterior top
+  - Wall corner interior top
+  - Wall lateral

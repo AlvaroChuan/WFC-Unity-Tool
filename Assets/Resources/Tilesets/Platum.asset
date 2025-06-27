@@ -1,0 +1,44 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 117a2642f1a883b4292968d8a2edfac4, type: 3}
+  m_Name: Platum
+  m_EditorClassIdentifier: 
+  tiles:
+  - {fileID: -581858735106248530, guid: 1dd4f668254d930408c2ed5a6903ea2e, type: 3}
+  - {fileID: -883180378134890131, guid: 17ea5efa4acf1a44f94a432409212ffc, type: 3}
+  - {fileID: 3125079878528131917, guid: 0606bcaf4ea3e0548a22a7a2a5c38c9f, type: 3}
+  - {fileID: -600534584442863955, guid: 46628765b0c712f4ebfc422689734b6a, type: 3}
+  - {fileID: -5253591950058311325, guid: 4329d87722c679d4bb2727695a9ea886, type: 3}
+  - {fileID: 8775081569205213268, guid: 57e04a9e28478154782c9076d1bc3544, type: 3}
+  - {fileID: 7803837676607053370, guid: 59bd92e8c9f79e049b7377a3a50de29a, type: 3}
+  - {fileID: 5170481964725826236, guid: 777e611c150c16a4ba2c9340b6fb0c51, type: 3}
+  - {fileID: -1635882725091183020, guid: 847781e97d49f964b98b514015d0a835, type: 3}
+  - {fileID: 7681182394613105324, guid: 10b23f5ee7f3d4e43bb7a82828c1ae1f, type: 3}
+  - {fileID: 2480747838336813440, guid: 9b034024c7c96cd4ea0e17571bf928cf, type: 3}
+  - {fileID: 416641381735992210, guid: aee6ddeaabdf663489308c3ab99c1c84, type: 3}
+  - {fileID: 4187426750720118590, guid: 85d911cca2c83ba40b7e12900bb75209, type: 3}
+  - {fileID: 2591377062762197173, guid: 23d3dc7cbca008f48ab4740bd402b911, type: 3}
+  tileSize: 2
+  tileCount: 14
+  tileTypes:
+  - Corner
+  - Corner Interior
+  - Wall
+  socketTypes:
+  - Empty
+  - Solid
+  - Grass
+  - Border
+  - Wall top
+  - Wall corner interior top
+  - Wall corner exterior top
+  - Wall lateral

@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: 6d335fd2c30fece4ab3244a3ec5fd1bf
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences:
+  - m_ViewDataDictionary: {instanceID: 0}
+  - m_UXML: {fileID: 9197481963319205126, guid: f7df2346e55fc64488aba05625d0f529, type: 3}
+  - m_Tileset: {instanceID: 0}
+  - m_WFCPrefab: {fileID: 721039834762255994, guid: 42c5bc5753036624bad139203c64636f, type: 3}
+  - m_SelectedMap: {instanceID: 0}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

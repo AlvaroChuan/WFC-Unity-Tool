@@ -1,0 +1,44 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 117a2642f1a883b4292968d8a2edfac4, type: 3}
+  m_Name: Mercum
+  m_EditorClassIdentifier: 
+  tiles:
+  - {fileID: -1009082326574463928, guid: 954ef0a58b2f2634e8377a9c6b1e223f, type: 3}
+  - {fileID: 8477922508823061138, guid: 7bbfc9056206070469b9b2926647ae27, type: 3}
+  - {fileID: 8426740657086011317, guid: 9d1f40736193a514d828c770fd93a48b, type: 3}
+  - {fileID: -6446040002080077809, guid: 8fc174d769b3c524092419f4b1364e8c, type: 3}
+  - {fileID: -224408645100843801, guid: a3fdc421dcb2c0e4283b285c70c931f7, type: 3}
+  - {fileID: -6073392674236670828, guid: 6504b8c2dabbc7e48bd007c2d62ee052, type: 3}
+  - {fileID: 1512903803829752541, guid: 65824fc1621d5954fb6a1ea6eead8c15, type: 3}
+  - {fileID: 2097307832941369879, guid: 8377c356eff52f441ab83b6269f532c0, type: 3}
+  - {fileID: -2223515546093674773, guid: 4fa566ade8c3d0f4b812e2b8b1e68f5c, type: 3}
+  - {fileID: -4474382592995978753, guid: 13236ff71a52f49419f4bc429d9bb3e3, type: 3}
+  - {fileID: 1730344338009345314, guid: d05de28d34b942e43905cdbf5c8118f1, type: 3}
+  - {fileID: 52588310044686958, guid: d30b11addf5e6bf438897135aef77b40, type: 3}
+  - {fileID: 4187426750720118590, guid: 85d911cca2c83ba40b7e12900bb75209, type: 3}
+  - {fileID: 2591377062762197173, guid: 23d3dc7cbca008f48ab4740bd402b911, type: 3}
+  tileSize: 2
+  tileCount: 14
+  tileTypes:
+  - Corner
+  - Corner interior
+  - Wall
+  socketTypes:
+  - Empty
+  - Solid
+  - Grass
+  - Border
+  - Wall top
+  - Wall corner exterior top
+  - Wall corner interior top
+  - Wall lateral

@@ -1,0 +1,344 @@
+// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel CSMain
+
+/*
+|-------------------------------------------------------------------------------|
+| Arrays in HLSL must have an explicit lenght given at their declaration        |
+| so the maximum number of neighbours is defined as a constant.                 |
+|-------------------------------------------------------------------------------|
+*/
+#define MAX_NEIGHBOURS 50
+#define X_EXTENSION 4
+#define Y_EXTENSION 1
+#define Z_EXTENSION 4
+
+struct Cell3DStruct
+{
+    uint colapsed;
+    // Number of tiles that can be placed in the cell
+    // (array lenghts are fixed we can't use .lenght)
+    uint entropy;
+    /* Possible tiles
+    |-------------------------------------------------------------------------------|
+    | The possible tiles are stored in a uint array, each uint containing the index |
+    | of a tile in the tileObjects array.                                           |
+    |-------------------------------------------------------------------------------|
+    */
+    int tileOptions[MAX_NEIGHBOURS];
+};
+
+struct Tile3DStruct
+{
+    int probability;
+    float3 rotation;
+
+    // Neighbours (these are the indexes of the tiles in the tileObjects array)
+    int upNeighbours[MAX_NEIGHBOURS];
+    int rightNeighbours[MAX_NEIGHBOURS];
+    int downNeighbours[MAX_NEIGHBOURS];
+    int leftNeighbours[MAX_NEIGHBOURS];
+    int aboveNeighbours[MAX_NEIGHBOURS];
+    int belowNeighbours[MAX_NEIGHBOURS];
+};
+
+// Values from de C# code
+uint gridDimensionsX, gridDimensionsY, gridDimensionsZ;
+uint seed;
+uint3 offset;
+
+// Save the cell with less entropy
+int minEntropy;
+int minEntropyIndex;
+
+// Cells to check
+uint3 cellsToCheck[X_EXTENSION * Y_EXTENSION * Z_EXTENSION];
+
+// Buffers
+StructuredBuffer<Tile3DStruct> tileObjects;
+RWStructuredBuffer<Cell3DStruct> output;
+RWStructuredBuffer<int> state;
+
+// We need arrays of fixed lenght in HLSL, so -1 will be our null value
+// this function just fills the array with -1
+void ClearArray(inout int array[MAX_NEIGHBOURS])
+{
+    for (int i = 0; i < MAX_NEIGHBOURS; i++)
+    {
+        array[i] = -1;
+    }
+}
+
+// Check if a value is in an array ( ORDERED ARRAY NEEDED)
+bool ArrayContains(int array[MAX_NEIGHBOURS], int value)
+{
+    for (int i = 0; i < MAX_NEIGHBOURS; i++)
+    {
+        if (array[i] == -1 || array[i] > value) return false;
+        else if (array[i] == value) return true;
+    }
+    return false;
+}
+
+// Check the neighbours of a cell
+void CheckNeighbours(uint x, uint y, uint z)
+{
+    uint up, down, left, right, above, below;
+    uint index = x + (z * gridDimensionsX) + (y * gridDimensionsX * gridDimensionsZ);
+    right = (x + 1) + (z * gridDimensionsX) + (y * gridDimensionsX * gridDimensionsZ);
+    left = (x - 1) + (z * gridDimensionsX) + (y * gridDimensionsX * gridDimensionsZ);
+    up = x + ((z + 1) * gridDimensionsX) + (y * gridDimensionsX * gridDimensionsZ);
+    down = x + ((z - 1) * gridDimensionsX) + (y * gridDimensionsX * gridDimensionsZ);
+    above = x + (z * gridDimensionsX) + ((y + 1) * gridDimensionsX * gridDimensionsZ);
+    below = x + (z * gridDimensionsX) + ((y - 1) * gridDimensionsX * gridDimensionsZ);
+
+    if(output[index].colapsed == 1) return;
+    if(x < 0 || x >= gridDimensionsX || y < 0 || y >= gridDimensionsY || z < 0 || z >= gridDimensionsZ) return;
+
+    /* Adaptation of the get neighbours method in the C# code
+    |-------------------------------------------------------------------------------|
+    | In the original code, we use a method that concatenates all the possible      |
+    | neighbours in each of the possible tiles in the position of each neighbour    |
+    | that is used to check the intersection between that list and the list of      |
+    | overall tile options.                                                         |
+    |-------------------------------------------------------------------------------|
+    | In the HLSL code, to avoid lists and its manipulations, we will go through    |
+    | all the possible neighbours and check if they are in any of the arrays of     |
+    | neighbours of all the possible tiles of each neighbour.                       |
+    |-------------------------------------------------------------------------------|
+    */
+    int optionIndex = 0;
+    int validOptionsIndex = 0;
+    int validOptions[MAX_NEIGHBOURS];
+    for(int i = 0; i < MAX_NEIGHBOURS; i++) validOptions[i] = -1;
+    while (optionIndex < MAX_NEIGHBOURS && output[index].tileOptions[optionIndex] != -1)
+    {
+        bool isNeighbour = true;
+        // Checks the down cell
+        if(z > 0)
+        {
+            for(int i = 0; i < MAX_NEIGHBOURS; i++)
+            {
+                // Check if we have reached the end of the array of tile options
+                if(output[down].tileOptions[i] == -1)
+                {
+                    // If we get to the end, it means that the option is not
+                    // in the lists of possible neighbours of all the possible neighbour
+                    // tiles, therefore it is not valid so we skip it
+                    isNeighbour = false;
+                    break;
+                }
+
+                isNeighbour = ArrayContains(tileObjects[output[down].tileOptions[i]].upNeighbours, output[index].tileOptions[optionIndex]);
+                if(isNeighbour) break;
+            }
+        }
+        // Checks the right cell
+        if(isNeighbour && x < gridDimensionsX - 1)
+        {
+            for(int i = 0; i < MAX_NEIGHBOURS; i++)
+            {
+                // Check if we have reached the end of the array of tile options
+                if(output[right].tileOptions[i] == -1)
+                {
+                    // If we get to the end, it means that the option is not
+                    // in the lists of possible neighbours of all the possible neighbour
+                    // tiles, therefore it is not valid so we skip it
+                    isNeighbour = false;
+                    break;
+                }
+
+                isNeighbour = ArrayContains(tileObjects[output[right].tileOptions[i]].leftNeighbours, output[index].tileOptions[optionIndex]);
+                if(isNeighbour) break;
+            }
+        }
+        // Checks the up cell
+        if(isNeighbour && z < gridDimensionsZ - 1)
+        {
+            for(int i = 0; i < MAX_NEIGHBOURS; i++)
+            {
+                // Check if we have reached the end of the array of tile options
+                if(output[up].tileOptions[i] == -1)
+                {
+                    // If we get to the end, it means that the option is not
+                    // in the lists of possible neighbours of all the possible neighbour
+                    // tiles, therefore it is not valid so we skip it
+                    isNeighbour = false;
+                    break;
+                }
+
+                isNeighbour = ArrayContains(tileObjects[output[up].tileOptions[i]].downNeighbours, output[index].tileOptions[optionIndex]);
+                if(isNeighbour) break;
+            }
+        }
+        // Checks the left cell
+        if(isNeighbour && x > 0)
+        {
+            for(int i = 0; i < MAX_NEIGHBOURS; i++)
+            {
+                // Check if we have reached the end of the array of tile options
+                if(output[left].tileOptions[i] == -1)
+                {
+                    // If we get to the end, it means that the option is not
+                    // in the lists of possible neighbours of all the possible neighbour
+                    // tiles, therefore it is not valid so we skip it
+                    isNeighbour = false;
+                    break;
+                }
+
+                isNeighbour = ArrayContains(tileObjects[output[left].tileOptions[i]].rightNeighbours, output[index].tileOptions[optionIndex]);
+                if(isNeighbour) break;
+            }
+        }
+        // Checks the below cell
+        if(isNeighbour && y > 0)
+        {
+            for(int i = 0; i < MAX_NEIGHBOURS; i++)
+            {
+                // Check if we have reached the end of the array of tile options
+                if(output[below].tileOptions[i] == -1)
+                {
+                    // If we get to the end, it means that the option is not
+                    // in the lists of possible neighbours of all the possible neighbour
+                    // tiles, therefore it is not valid so we skip it
+                    isNeighbour = false;
+                    break;
+                }
+
+                isNeighbour = ArrayContains(tileObjects[output[below].tileOptions[i]].aboveNeighbours, output[index].tileOptions[optionIndex]);
+                if(isNeighbour) break;
+            }
+        }
+        // Checks the above cell
+        if(isNeighbour && y < gridDimensionsY - 1)
+        {
+            for(int i = 0; i < MAX_NEIGHBOURS; i++)
+            {
+                // Check if we have reached the end of the array of tile options
+                if(output[above].tileOptions[i] == -1)
+                {
+                    // If we get to the end, it means that the option is not
+                    // in the lists of possible neighbours of all the possible neighbour
+                    // tiles, therefore it is not valid so we skip it
+                    isNeighbour = false;
+                    break;
+                }
+
+                isNeighbour = ArrayContains(tileObjects[output[above].tileOptions[i]].belowNeighbours, output[index].tileOptions[optionIndex]);
+                if(isNeighbour) break;
+            }
+        }
+        if(isNeighbour)
+        {
+            validOptions[validOptionsIndex] = output[index].tileOptions[optionIndex];
+            validOptionsIndex++;
+        }
+        optionIndex++;
+    }
+
+    // We assign the new options to the cell
+    output[index].tileOptions = validOptions;
+    output[index].entropy = validOptionsIndex;
+    if(validOptionsIndex <= minEntropy)
+    {
+        minEntropy = validOptionsIndex;
+        minEntropyIndex = index;
+    }
+}
+
+bool CollapseCell(int cellToCollapseIndex)
+{
+
+    if(output[cellToCollapseIndex].tileOptions[0] == -1) return false;
+    seed = (seed * 9301 + cellToCollapseIndex * 893234) % 233280;
+    // Collapse the cell
+    output[cellToCollapseIndex].colapsed = 1;
+
+    int max = 0;
+    for(max = 0; max < MAX_NEIGHBOURS; max++)
+    {
+        if(output[cellToCollapseIndex].tileOptions[max] == -1) break;
+    }
+
+    int temp = output[cellToCollapseIndex].tileOptions[seed % max];
+    ClearArray(output[cellToCollapseIndex].tileOptions);
+    output[cellToCollapseIndex].tileOptions[0] = temp;
+    output[cellToCollapseIndex].entropy = 1;
+    return true;
+}
+
+void GetCellsToCheck(uint3 initialIndex)
+{
+    cellsToCheck[0] = initialIndex.xyz + uint3(0, 0, 0);
+    cellsToCheck[1] = initialIndex.xyz + uint3(1, 0, 0);
+    cellsToCheck[2] = initialIndex.xyz + uint3(2, 0, 0);
+    cellsToCheck[3] = initialIndex.xyz + uint3(3, 0, 0);
+    cellsToCheck[4] = initialIndex.xyz + uint3(0, 0, 1);
+    cellsToCheck[5] = initialIndex.xyz + uint3(1, 0, 1);
+    cellsToCheck[6] = initialIndex.xyz + uint3(2, 0, 1);
+    cellsToCheck[7] = initialIndex.xyz + uint3(3, 0, 1);
+    cellsToCheck[8] = initialIndex.xyz + uint3(0, 0, 2);
+    cellsToCheck[9] = initialIndex.xyz + uint3(1, 0, 2);
+    cellsToCheck[10] = initialIndex.xyz + uint3(2, 0, 2);
+    cellsToCheck[11] = initialIndex.xyz + uint3(3, 0, 2);
+    cellsToCheck[12] = initialIndex.xyz + uint3(0, 0, 3);
+    cellsToCheck[13] = initialIndex.xyz + uint3(1, 0, 3);
+    cellsToCheck[14] = initialIndex.xyz + uint3(2, 0, 3);
+    cellsToCheck[15] = initialIndex.xyz + uint3(3, 0, 3);
+}
+
+void RestartCells()
+{
+    for(uint i = 0; i < X_EXTENSION * Y_EXTENSION * Z_EXTENSION; i++)
+    {
+        if (cellsToCheck[i].x >= 0 && cellsToCheck[i].x < gridDimensionsX
+            && cellsToCheck[i].y >= 0 && cellsToCheck[i].y < gridDimensionsY
+            && cellsToCheck[i].z >= 0 && cellsToCheck[i].z < gridDimensionsZ)
+        {
+            uint index = cellsToCheck[i].x + (cellsToCheck[i].z * gridDimensionsX) + (cellsToCheck[i].y * gridDimensionsX * gridDimensionsZ);
+            output[index].colapsed = 0;
+            output[index].entropy = MAX_NEIGHBOURS;
+            for(int j = 0; j < MAX_NEIGHBOURS; j++)
+            {
+                output[index].tileOptions[j] = j;
+            }
+        }
+    }
+}
+
+void UpdateGeneration(uint3 initialIndex)
+{
+    uint iterations = 0;
+    while (iterations < X_EXTENSION * Y_EXTENSION * Z_EXTENSION)
+    {
+        minEntropy = MAX_NEIGHBOURS + 1;
+        minEntropyIndex = -1;
+        for(int i = 0; i < X_EXTENSION * Y_EXTENSION * Z_EXTENSION; i++)
+        {
+            CheckNeighbours(cellsToCheck[i].x, cellsToCheck[i].y, cellsToCheck[i].z);
+        }
+        iterations++;
+
+        // This means that the neighbor checks didn't do anything so all not collapsed cells must be out of bounds
+        if(minEntropyIndex == -1) continue;
+
+        // If there's an incompatibility, we restart everything
+        if(!CollapseCell(minEntropyIndex))
+        {
+            InterlockedAdd(state[0], 1);
+            break;
+        }
+    }
+}
+
+[numthreads(2,1,2)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+    uint3 initialIndex;
+    initialIndex.x = id.x * X_EXTENSION + id.x + offset.x;
+    initialIndex.y = id.y * Y_EXTENSION + id.y + offset.y;
+    initialIndex.z = id.z * Z_EXTENSION + id.z + offset.z;
+    seed += initialIndex.x * 34 + initialIndex.y * 76 + initialIndex.z;
+    GetCellsToCheck(initialIndex);
+    RestartCells();
+    UpdateGeneration(initialIndex);
+}

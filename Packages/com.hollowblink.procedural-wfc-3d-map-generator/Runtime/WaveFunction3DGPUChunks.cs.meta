@@ -1,0 +1,16 @@
+fileFormatVersion: 2
+guid: da7b730f96ef2f840b9406a7a401531f
+MonoImporter:
+  externalObjects: {}
+  serializedVersion: 2
+  defaultReferences:
+  - shader: {fileID: 7200000, guid: 8d48452b361f16c43a5d023e5c2f2c41, type: 3}
+  - solidTile: {fileID: 2591377062762197173, guid: 23d3dc7cbca008f48ab4740bd402b911, type: 3}
+  - emptyTile: {fileID: 4187426750720118590, guid: 85d911cca2c83ba40b7e12900bb75209, type: 3}
+  - emptyPrefab: {fileID: 3967584849540067409, guid: d8e01d1981e59424b85d42fbc6b302bd, type: 3}
+  - cellObj: {fileID: -4312026199669856736, guid: 9469c2b24035b984b8ee9081628e4604, type: 3}
+  executionOrder: 0
+  icon: {instanceID: 0}
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

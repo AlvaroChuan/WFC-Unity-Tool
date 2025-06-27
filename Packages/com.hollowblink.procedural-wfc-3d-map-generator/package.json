@@ -1,0 +1,28 @@
+{
+    "name": "com.hollowblink.procedural-wfc-3d-map-generator",
+    "version": "1.0.0",
+    "displayName": "Procedural WFC 3D Map Generator",
+    "description": "A tool to generate",
+    "unity": "2022.3",
+    "unityRelease": "0b5",
+    "documentationUrl": "",
+    "changelogUrl": "",
+    "licensesUrl": "",
+    "keywords": [
+      "meshes",
+      "extrude",
+      "bezier"
+    ],
+    "samples": [
+      {
+          "displayName": "Shapes2D",
+          "description": "Contains sample 2D shapes to be used with the Bezier Extrude Tool.",
+          "path": "Samples/Shapes2D"
+      }
+    ],
+    "author": {
+      "name": "hollowblink",
+      "email": "alvarochuan@gmail.com",
+      "url": "https://alvarochuan.github.io"
+    }
+  }
