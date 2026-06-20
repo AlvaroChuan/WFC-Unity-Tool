@@ -478,7 +478,7 @@ namespace WFC3DMapGenerator
                     if (otherTile.belowSocket.socket_name == tile.aboveSocket.socket_name)
                     {
                         if ((otherTile.belowSocket.rotationallyInvariant
-                            && tile.aboveSocket.rotationallyInvariant)
+                            || tile.aboveSocket.rotationallyInvariant)
                             || (otherTile.belowSocket.rotationIndex == tile.aboveSocket.rotationIndex))
                             tile.aboveNeighbours.Add(otherTile);
                     }
@@ -487,7 +487,7 @@ namespace WFC3DMapGenerator
                     if (otherTile.aboveSocket.socket_name == tile.belowSocket.socket_name)
                     {
                         if ((otherTile.aboveSocket.rotationallyInvariant
-                            && tile.belowSocket.rotationallyInvariant)
+                            || tile.belowSocket.rotationallyInvariant)
                             || (otherTile.aboveSocket.rotationIndex == tile.belowSocket.rotationIndex))
                             tile.belowNeighbours.Add(otherTile);
                     }
