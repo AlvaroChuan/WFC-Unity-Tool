@@ -12,7 +12,7 @@ using Debug = UnityEngine.Debug;
 using Tile3D = WFC3DMapGenerator.Tile3D;
 using Tileset = WFC3DMapGenerator.Tileset;
 
-public class WaveFunction3D : MonoBehaviour
+public class WaveFunction3DAC4 : MonoBehaviour
 {
     [SerializeField] private int dimensionsX, dimensionsZ, dimensionsY;
     [SerializeField] private Tile3D floorTile;
@@ -252,7 +252,11 @@ public class WaveFunction3D : MonoBehaviour
     }
 
 
-    //---------CREATE THE GRID WITH CELLS-------------
+    // AC-4 Data Structures
+    bool[,] possible;
+    int[,,] enablerCount;
+    int[] remainingOptions;
+    Stack<(int cell, int tileIndex)> removals;
 
     void InitializeGrid()
     {
@@ -268,9 +272,155 @@ public class WaveFunction3D : MonoBehaviour
                 }
             }
         }
+        InitializeAC4();
     }
 
-    //--------CREATE A SOLID FLOOR ON THE FIRST PLANT-----------
+    void InitializeAC4()
+    {
+        int numCells = gridComponents.Count;
+        int numTiles = tileObjects.Length;
+        possible = new bool[numCells, numTiles];
+        enablerCount = new int[numCells, numTiles, 6];
+        remainingOptions = new int[numCells];
+        removals = new Stack<(int, int)>();
+
+        int[,] initialEnabler = new int[numTiles, 6];
+        for (int t = 0; t < numTiles; t++)
+        {
+            initialEnabler[t, 0] = tileObjects[t].upNeighbours.Count;
+            initialEnabler[t, 1] = tileObjects[t].downNeighbours.Count;
+            initialEnabler[t, 2] = tileObjects[t].rightNeighbours.Count;
+            initialEnabler[t, 3] = tileObjects[t].leftNeighbours.Count;
+            initialEnabler[t, 4] = tileObjects[t].aboveNeighbours.Count;
+            initialEnabler[t, 5] = tileObjects[t].belowNeighbours.Count;
+        }
+
+        for (int c = 0; c < numCells; c++)
+        {
+            remainingOptions[c] = numTiles;
+            for (int t = 0; t < numTiles; t++)
+            {
+                possible[c, t] = true;
+                for (int d = 0; d < 6; d++)
+                {
+                    enablerCount[c, t, d] = initialEnabler[t, d];
+                }
+            }
+        }
+    }
+
+    void Ban(int c, int tIndex)
+    {
+        if (!possible[c, tIndex]) return;
+        possible[c, tIndex] = false;
+        remainingOptions[c]--;
+        removals.Push((c, tIndex));
+    }
+
+    List<Tile3D> GetValidNeighbors(Tile3D t, int d)
+    {
+        if (d == 0) return t.upNeighbours; // Z+
+        if (d == 1) return t.downNeighbours; // Z-
+        if (d == 2) return t.rightNeighbours; // X+
+        if (d == 3) return t.leftNeighbours; // X-
+        if (d == 4) return t.aboveNeighbours; // Y+
+        if (d == 5) return t.belowNeighbours; // Y-
+        return null;
+    }
+
+    int OppositeDirection(int d)
+    {
+        if (d == 0) return 1;
+        if (d == 1) return 0;
+        if (d == 2) return 3;
+        if (d == 3) return 2;
+        if (d == 4) return 5;
+        if (d == 5) return 4;
+        return 0;
+    }
+
+    int GetNeighbor(int c, int d)
+    {
+        int x = c % dimensionsX;
+        int y = c / (dimensionsX * dimensionsZ);
+        int z = (c / dimensionsX) % dimensionsZ;
+
+        if (d == 0 && z < dimensionsZ - 1) return c + dimensionsX;
+        if (d == 1 && z > 0) return c - dimensionsX;
+        if (d == 2 && x < dimensionsX - 1) return c + 1;
+        if (d == 3 && x > 0) return c - 1;
+        if (d == 4 && y < dimensionsY - 1) return c + (dimensionsX * dimensionsZ);
+        if (d == 5 && y > 0) return c - (dimensionsX * dimensionsZ);
+        return -1;
+    }
+
+    void Propagate()
+    {
+        while (removals.Count > 0)
+        {
+            var (c, tIndex) = removals.Pop();
+            Tile3D t = tileObjects[tIndex];
+
+            for (int d = 0; d < 6; d++)
+            {
+                int neighbor = GetNeighbor(c, d);
+                if (neighbor == -1) continue;
+
+                int opp = OppositeDirection(d);
+                List<Tile3D> compatibleInNeighbor = GetValidNeighbors(t, d);
+                
+                foreach (Tile3D compTile in compatibleInNeighbor)
+                {
+                    int compIndex = System.Array.IndexOf(tileObjects, compTile);
+                    if (compIndex != -1 && possible[neighbor, compIndex])
+                    {
+                        enablerCount[neighbor, compIndex, opp]--;
+                        if (enablerCount[neighbor, compIndex, opp] == 0)
+                        {
+                            Ban(neighbor, compIndex);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    void CollapseTo(int c, Tile3D tile)
+    {
+        int targetIndex = System.Array.IndexOf(tileObjects, tile);
+        for (int t = 0; t < tileObjects.Length; t++)
+        {
+            if (t != targetIndex && possible[c, t])
+            {
+                Ban(c, t);
+            }
+        }
+        gridComponents[c].collapsed = true;
+        Propagate();
+    }
+
+    void InstantiateTile(int c, Tile3D tile)
+    {
+        Cell3D cell = gridComponents[c];
+        cell.tileOptions = new Tile3D[] { tile };
+        
+        if (cell.transform.childCount != 0)
+        {
+            for (int i = cell.transform.childCount - 1; i >= 0; i--)
+            {
+                DestroyHelper(cell.transform.GetChild(i).gameObject);
+            }
+        }
+
+        Tile3D instantiatedTile = Instantiate(tile, cell.transform.position, Quaternion.identity, cell.transform);
+        if (instantiatedTile.rotation != Vector3.zero)
+        {
+            instantiatedTile.gameObject.transform.Rotate(tile.rotation, Space.Self);
+        }
+        instantiatedTile.gameObject.transform.position += instantiatedTile.positionOffset;
+        instantiatedTile.gameObject.SetActive(true);
+        iterations++;
+    }
 
     void CreateSolidFloor()
     {
@@ -279,359 +429,105 @@ public class WaveFunction3D : MonoBehaviour
         {
             for (int x = 0; x < dimensionsX; x++)
             {
-                var index = x + (z * dimensionsX) + (y * dimensionsX * dimensionsZ);
-                Cell3D cellToCollapse = gridComponents[index];
-                cellToCollapse.tileOptions = new Tile3D[] { floorTile };
-                cellToCollapse.collapsed = true;
-                if (cellToCollapse.transform.childCount != 0)
-                {
-                    foreach (Transform child in cellToCollapse.transform)
-                    {
-                        DestroyHelper(child.gameObject);
-                    }
-                }
-
-                Tile3D instantiatedTile = Instantiate(floorTile, cellToCollapse.transform.position, Quaternion.identity, cellToCollapse.transform);
-                if (instantiatedTile.rotation != Vector3.zero)
-                {
-                    instantiatedTile.gameObject.transform.Rotate(floorTile.rotation, Space.Self);
-                }
-
-                instantiatedTile.gameObject.transform.position += instantiatedTile.positionOffset;
-                instantiatedTile.gameObject.SetActive(true);
-                iterations++;
+                int index = x + (z * dimensionsX) + (y * dimensionsX * dimensionsZ);
+                CollapseTo(index, floorTile);
+                InstantiateTile(index, floorTile);
             }
         }
     }
 
     void CreateSolidCeiling()
     {
-        int y = dimensionsY-1;
+        int y = dimensionsY - 1;
         for (int z = 0; z < dimensionsZ; z++)
         {
             for (int x = 0; x < dimensionsX; x++)
             {
-                var index = x + (z * dimensionsX) + (y * dimensionsX * dimensionsZ);
-                Cell3D cellToCollapse = gridComponents[index];
-                cellToCollapse.tileOptions = new Tile3D[] { emptyTile };
-                cellToCollapse.collapsed = true;
-                if (cellToCollapse.transform.childCount != 0)
-                {
-                    foreach (Transform child in cellToCollapse.transform)
-                    {
-                        DestroyHelper(child.gameObject);
-                    }
-                }
-
-                Tile3D instantiatedTile = Instantiate(emptyTile, cellToCollapse.transform.position, Quaternion.identity, cellToCollapse.transform);
-                if (instantiatedTile.rotation != Vector3.zero)
-                {
-                    instantiatedTile.gameObject.transform.Rotate(floorTile.rotation, Space.Self);
-                }
-
-                instantiatedTile.gameObject.transform.position += instantiatedTile.positionOffset;
-                instantiatedTile.gameObject.SetActive(true);
-                iterations++;
+                int index = x + (z * dimensionsX) + (y * dimensionsX * dimensionsZ);
+                CollapseTo(index, emptyTile);
+                InstantiateTile(index, emptyTile);
             }
         }
-    }
-
-
-    void CheckEntropy()
-    {
-        List<Cell3D> tempGrid = new List<Cell3D>(gridComponents);
-
-        tempGrid.RemoveAll(c => c.collapsed);
-
-
-        //------------Para que elija el que tiene menos entropia-----------------
-        //The result of this calculation determines the order of the elements in the sorted list.
-        //If the result is negative, it means a should come before b; if positive, it means a should come after b;
-        //and if zero, their order remains unchanged.
-        tempGrid.Sort((a, b) => { return a.tileOptions.Length - b.tileOptions.Length; });
-
-
-        //Dejar solo las celdas que tengan el menor número de posibilidades
-        int arrLength = tempGrid[0].tileOptions.Length;
-        int stopIndex = default;
-
-        for (int i = 1; i < tempGrid.Count; i++)
-        {
-            if (tempGrid[i].tileOptions.Length > arrLength)
-            {
-                stopIndex = i;
-                break;
-            }
-        }
-
-        if (stopIndex > 0)
-        {
-            tempGrid.RemoveRange(stopIndex, tempGrid.Count - stopIndex);
-        }
-
-        //Para que vaya en orden, dejar solo esto
-        CollapseCell(tempGrid);
-    }
-
-    void CollapseCell(List<Cell3D> tempGrid)
-    {
-        Cell3D cellToCollapse = tempGrid[UnityEngine.Random.Range(0, tempGrid.Count)];
-
-        cellToCollapse.collapsed = true;
-
-        //Si es la capa superior, comprobar exclusiones y eliminarlas
-       /* if ((cellToCollapse.index / (dimensionsX * dimensionsZ)) == dimensionsY - 1)
-        {
-            cellToCollapse.tileOptions = cellToCollapse.tileOptions.Where(tile => !tile.excludeInTopLayer).ToArray();
-        }*/
-
-        //Elegir una tile para esa celda
-        List<(Tile3D tile, int weight)> weightedTiles = cellToCollapse.tileOptions.Select(tile => (tile, tile.probability)).ToList();
-        Tile3D selectedTile = ChooseTile(weightedTiles);
-
-        if (selectedTile is null)
-        {
-            Debug.LogError("INCOMPATIBILITY!");
-           // if (iterations > 20)
-           // {
-               // BackTrackingHandler(cellToCollapse); //esto no va mucho
-               // UpdateGeneration();
-           // }
-          //  else
-           // {
-                Regenerate();
-           // }
-            return;
-        }
-        
-        cellToCollapse.tileOptions = new Tile3D[] { selectedTile };
-        Tile3D foundTile = cellToCollapse.tileOptions[0];
-
-        if (cellToCollapse.transform.childCount != 0)
-        {
-            foreach (Transform child in cellToCollapse.transform)
-            {
-                DestroyHelper(child.gameObject);
-            }
-        }
-
-        Tile3D instantiatedTile = Instantiate(foundTile, cellToCollapse.transform.position, Quaternion.identity, cellToCollapse.transform);
-        if (instantiatedTile.rotation != Vector3.zero)
-        {
-            instantiatedTile.gameObject.transform.Rotate(foundTile.rotation, Space.Self);
-        }
-        
-        instantiatedTile.gameObject.transform.position += instantiatedTile.positionOffset;
-        instantiatedTile.gameObject.SetActive(true);
-
-        // CheckExtras(foundTile, cellToCollapse.transform);
-
-        UpdateGeneration();
     }
 
     Tile3D ChooseTile(List<(Tile3D tile, int weight)> weightedTiles)
     {
-        // Calculate the total weight
         int totalWeight = weightedTiles.Sum(item => item.weight);
-
         System.Random random = new System.Random();
 
         if (totalWeight == 0 && weightedTiles.Count > 0)
         {
-            // If all weights are 0, choose uniformly to prevent returning null
             return weightedTiles[random.Next(0, weightedTiles.Count)].tile;
         }
 
-        // Generate a random number between 0 and totalWeight - 1
         int randomNumber = random.Next(0, totalWeight);
-
-        // Iterate through the tiles and find the one corresponding to the random number
         foreach (var (tile, weight) in weightedTiles)
         {
-            if (randomNumber < weight)
-                return tile;
+            if (randomNumber < weight) return tile;
             randomNumber -= weight;
         }
-        return null; // This should not happen if the list is not empty
+        return null; 
     }
 
     void UpdateGeneration()
     {
-        List<Cell3D> newGenerationCell = new List<Cell3D>(gridComponents);
-
-
-        for (int y = 0; y < dimensionsY; y++)
+        while (true)
         {
-            for (int z = 0; z < dimensionsZ; z++)
+            int minOptions = int.MaxValue;
+            List<int> bestCells = new List<int>();
+
+            for (int c = 0; c < gridComponents.Count; c++)
             {
-                for (int x = 0; x < dimensionsX; x++)
+                if (!gridComponents[c].collapsed)
                 {
-                    CheckNeighbours(x, y, z, ref newGenerationCell);
+                    if (remainingOptions[c] < minOptions)
+                    {
+                        minOptions = remainingOptions[c];
+                        bestCells.Clear();
+                        bestCells.Add(c);
+                    }
+                    else if (remainingOptions[c] == minOptions)
+                    {
+                        bestCells.Add(c);
+                    }
                 }
             }
 
-        }
-
-        gridComponents = newGenerationCell;
-
-        iterations++;
-        if (iterations <= dimensionsX * dimensionsZ * dimensionsY)
-        {
-            CheckEntropy();
-        }
-        else
-        {
-            //FIN
-            stopwatch.Stop();
-            print($"Map generated completely in {stopwatch.ElapsedMilliseconds} ms ({stopwatch.ElapsedMilliseconds / 1000f} s)");
-        }
-
-    }
-
-   
-    //This method looks and update the options in every cell of the given list looking at the neighbours
-
-    void CheckNeighbours(int x, int y, int z, ref List<Cell3D> newGenerationCell)
-    {
-        int up, down, left, right, above, below;
-        var index = x + (z * dimensionsX) + (y * dimensionsX * dimensionsZ);
-        right = (x + 1) + (z * dimensionsX) + (y * dimensionsX * dimensionsZ);
-        left = (x - 1) + (z * dimensionsX) + (y * dimensionsX * dimensionsZ);
-        up = x + ((z + 1) * dimensionsX) + (y * dimensionsX * dimensionsZ);
-        down = x + ((z - 1) * dimensionsX) + (y * dimensionsX * dimensionsZ);
-        above = x + (z * dimensionsX) + ((y + 1) * dimensionsX * dimensionsZ);
-        below = x + (z * dimensionsX) + ((y - 1) * dimensionsX * dimensionsZ);
-
-        if (gridComponents[index].collapsed)
-        {
-            newGenerationCell[index] = gridComponents[index];
-        }
-        else
-        {
-            List<Tile3D> options = new List<Tile3D>();
-            foreach (Tile3D t in tileObjects)
+            if (bestCells.Count == 0)
             {
-                options.Add(t);
+                stopwatch.Stop();
+                print($"Map generated completely in {stopwatch.ElapsedMilliseconds} ms ({stopwatch.ElapsedMilliseconds / 1000f} s)");
+                break;
             }
 
-
-            //Mira la celda de abajo
-            if (z > 0)
+            if (minOptions == 0)
             {
-                List<Tile3D> validOptions = new List<Tile3D>();
-                foreach (Tile3D possibleOptions in gridComponents[down].tileOptions)
+                Debug.LogError("INCOMPATIBILITY!");
+                Regenerate();
+                return;
+            }
+
+            int cellIndex = bestCells[UnityEngine.Random.Range(0, bestCells.Count)];
+            
+            List<(Tile3D tile, int weight)> validTiles = new List<(Tile3D, int)>();
+            for (int t = 0; t < tileObjects.Length; t++)
+            {
+                if (possible[cellIndex, t])
                 {
-                    var valid = possibleOptions.upNeighbours;
-                    validOptions = validOptions.Concat(valid).ToList();
+                    validTiles.Add((tileObjects[t], tileObjects[t].probability));
                 }
-                CheckValidity(options, validOptions);
-
-
             }
 
-            //Mirar la celda derecha
-            if (x < dimensionsX - 1)
+            Tile3D selectedTile = ChooseTile(validTiles);
+            if (selectedTile == null)
             {
-                List<Tile3D> validOptions = new List<Tile3D>();
-                foreach (Tile3D possibleOptions in gridComponents[right].tileOptions)
-                {
-                    var valid = possibleOptions.leftNeighbours;
-                    validOptions = validOptions.Concat(valid).ToList();
-                }
-
-                CheckValidity(options, validOptions);
+                Debug.LogError("INCOMPATIBILITY!");
+                Regenerate();
+                return;
             }
 
-
-
-            //Mira la celda de arriba
-            if (z < dimensionsZ - 1)
-            {
-                List<Tile3D> validOptions = new List<Tile3D>();
-
-                foreach (Tile3D possibleOptions in gridComponents[up].tileOptions)
-                {
-
-
-                    var valid = possibleOptions.downNeighbours;
-                    validOptions = validOptions.Concat(valid).ToList();
-                }
-
-                CheckValidity(options, validOptions);
-
-            }
-
-
-            //Mirar la celda izquierda
-            if (x > 0)
-            {
-                List<Tile3D> validOptions = new List<Tile3D>();
-
-                foreach (Tile3D possibleOptions in gridComponents[left].tileOptions)
-                {
-
-                    var valid = possibleOptions.rightNeighbours;
-                    validOptions = validOptions.Concat(valid).ToList();
-                }
-
-                CheckValidity(options, validOptions);
-
-            }
-
-
-            //Mirar la celda de debajo
-            if (y > 0)
-            {
-                List<Tile3D> validOptions = new List<Tile3D>();
-                foreach (Tile3D possibleOptions in gridComponents[below].tileOptions)
-                {
-
-                    var valid = possibleOptions.aboveNeighbours;
-                    validOptions = validOptions.Concat(valid).ToList();
-                }
-
-                CheckValidity(options, validOptions);
-
-            }
-
-            //Mirar la celda de encima
-            if (y < dimensionsY - 1)
-            {
-                List<Tile3D> validOptions = new List<Tile3D>();
-
-                foreach (Tile3D possibleOptions in gridComponents[above].tileOptions)
-                {
-
-                    var valid = possibleOptions.belowNeighbours;
-                    validOptions = validOptions.Concat(valid).ToList();
-                }
-
-                CheckValidity(options, validOptions);
-
-            }
-
-            Tile3D[] newTileList = new Tile3D[options.Count];
-
-            for (int i = 0; i < options.Count; i++)
-            {
-                newTileList[i] = options[i];
-            }
-
-            newGenerationCell[index].RecreateCell(newTileList);
-        }
-    }
-
-  
-
-    void CheckValidity(List<Tile3D> optionList, List<Tile3D> validOption)
-    {
-        for (int x = optionList.Count - 1; x >= 0; x--)
-        {
-            var element = optionList[x];
-            if (!validOption.Contains(element))
-            {              
-                optionList.RemoveAt(x);
-            }
+            CollapseTo(cellIndex, selectedTile);
+            InstantiateTile(cellIndex, selectedTile);
         }
     }
 

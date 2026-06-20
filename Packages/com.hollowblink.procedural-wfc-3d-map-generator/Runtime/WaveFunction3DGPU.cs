@@ -3,6 +3,7 @@ using System.Linq;
 using UnityEngine;
 using UnityEngine.Rendering;
 using System;
+using System.Diagnostics;
 using Cell3DStruct = WFC3DMapGenerator.WFCStructs.Cell3DStruct;
 using Tile3DStruct = WFC3DMapGenerator.WFCStructs.Tile3DStruct;
 
@@ -43,6 +44,7 @@ namespace WFC3DMapGenerator
         // Generation aux variables
         private bool stopGeneration;
         private bool finished = true;
+        private Stopwatch stopwatch;
 
         /// <summary>
         /// Initializes the map generation
@@ -59,6 +61,10 @@ namespace WFC3DMapGenerator
             tileObjects = tiles;
             stopGeneration = false;
             finished = false;
+
+            stopwatch = new Stopwatch();
+            stopwatch.Start();
+
             ClearHierarchy();
             Generate();
         }
@@ -119,7 +125,7 @@ namespace WFC3DMapGenerator
 
                 void DispatchLayer()
                 {
-                    Debug.Log("Dispatching layer " + layer);
+                    //Debug.Log("Dispatching layer " + layer);
                     // Loop until the grid is fully collapsed without any incomatibilities
                     if (stopGeneration)
                     {
@@ -145,7 +151,7 @@ namespace WFC3DMapGenerator
 
                     if (incompatibilities[0] == 0 & layer > 0 & layer < dimensionsY - 1)
                     {
-                        Debug.Log("Layer " + layer + " finished, dispatching next layer");
+                        //Debug.Log("Layer " + layer + " finished, dispatching next layer");
                         layer++;
                         stateBuffer.SetData(new int[1] { 0 });
                         outputBuffer.GetData(gridComponentsStructs);
@@ -153,18 +159,20 @@ namespace WFC3DMapGenerator
                     }
                     else if (incompatibilities[0] != 0)
                     {
-                        Debug.Log("Generation finished with incompatibilities" + incompatibilities[0]);
+                        //Debug.Log("Generation finished with incompatibilities" + incompatibilities[0]);
                         stateBuffer.SetData(new int[1] { 0 });
                         outputBuffer.SetData(gridComponentsStructs);
                         AsyncGPUReadback.Request(outputBuffer, _ => DispatchLayer());
                     }
                     else
                     {
-                        Debug.Log("Generation finished without incompatibilities");
+                        //Debug.Log("Generation finished without incompatibilities");
                         outputBuffer.GetData(gridComponentsStructs);
                         InstantiateChunk();
                         ClearGeneration();
                         ReleaseMemory();
+                        stopwatch.Stop();
+                        print($"Map generated completely in {stopwatch.ElapsedMilliseconds} ms ({stopwatch.ElapsedMilliseconds / 1000f} s)");
                     }
                 }
             }

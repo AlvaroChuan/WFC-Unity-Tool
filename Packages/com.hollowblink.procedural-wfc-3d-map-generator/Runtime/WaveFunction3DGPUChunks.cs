@@ -3,6 +3,7 @@ using System.Linq;
 using UnityEngine;
 using Debug = UnityEngine.Debug;
 using System;
+using System.Diagnostics;
 using UnityEngine.Rendering;
 using Tile3DStruct = WFC3DMapGenerator.WFCStructs.Tile3DStruct;
 using Cell3DStruct = WFC3DMapGenerator.WFCStructs.Cell3DStruct;
@@ -51,6 +52,7 @@ namespace WFC3DMapGenerator
         private int actualChunk;
         private bool stopGeneration;
         private bool finished = true;
+        private Stopwatch stopwatch;
 
         /// <summary>
         /// Initializes the map generation based on the given parameters
@@ -68,6 +70,10 @@ namespace WFC3DMapGenerator
             actualChunk = 0;
             stopGeneration = false;
             finished = false;
+
+            stopwatch = new Stopwatch();
+            stopwatch.Start();
+
             ClearHierarchy();
             StartGeneration();
         }
@@ -238,6 +244,8 @@ namespace WFC3DMapGenerator
                         InstantiateChunk(chunkOffsets[actualChunk]);
                         ClearGeneration();
                         ReleaseMemory();
+                        stopwatch.Stop();
+                        print($"Map generated completely in {stopwatch.ElapsedMilliseconds} ms ({stopwatch.ElapsedMilliseconds / 1000f} s)");
                     }
                 }
             }
