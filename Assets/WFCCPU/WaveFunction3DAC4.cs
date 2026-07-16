@@ -267,7 +267,7 @@ public class WaveFunction3DAC4 : MonoBehaviour
                 for (int x = 0; x < dimensionsX; x++)
                 {
                     Cell3D newCell = Instantiate(cellObj, new Vector3(x*cellSize, y * cellSize, z*cellSize), Quaternion.identity, gameObject.transform);
-                    newCell.CreateCell(false, tileObjects, x + (z * dimensionsX) + (y * dimensionsX * dimensionsZ));
+                    //newCell.CreateCell(false, tileObjects, x + (z * dimensionsX) + (y * dimensionsX * dimensionsZ));
                     gridComponents.Add(newCell);
                 }
             }
@@ -402,7 +402,7 @@ public class WaveFunction3DAC4 : MonoBehaviour
     void InstantiateTile(int c, Tile3D tile)
     {
         Cell3D cell = gridComponents[c];
-        cell.tileOptions = new Tile3D[] { tile };
+        //cell.tileOptions = new Tile3D[] { tile };
         
         if (cell.transform.childCount != 0)
         {

@@ -6,19 +6,22 @@ using Tile3D = WFC3DMapGenerator.Tile3D;
 public class Cell3D : MonoBehaviour
 {
     public bool collapsed;
-    public Tile3D[] tileOptions;
+    public ulong possibleTilesMask;
+    public int entropy;
     public int index; //debug
     
 
-    public void CreateCell(bool collapseState, Tile3D[] tiles, int cellIndex)
+    public void CreateCell(bool collapseState, ulong mask, int startingEntropy, int cellIndex)
     {
         collapsed = collapseState;
-        tileOptions = tiles;
+        possibleTilesMask = mask;
+        entropy = startingEntropy;
         index = cellIndex;
     }
 
-    public void RecreateCell(Tile3D[] tiles)
+    public void RecreateCell(ulong mask, int newEntropy)
     {
-        tileOptions = tiles;
+        possibleTilesMask = mask;
+        entropy = newEntropy;
     }
 }
