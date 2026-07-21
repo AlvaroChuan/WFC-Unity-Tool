@@ -1,15 +1,15 @@
 using UnityEditor;
 using UnityEngine;
 
-[CustomEditor(typeof(WaveFunction3D))]
-public class WaveFunction3DEditor : Editor
+[CustomEditor(typeof(WaveFunction3DBitmask))]
+public class WaveFunction3DBitmaskEditor : Editor
 {
     public override void OnInspectorGUI()
     {
         // Draw the default inspector options
         DrawDefaultInspector();
 
-        WaveFunction3D wfc = (WaveFunction3D)target;
+        WaveFunction3DBitmask wfc = (WaveFunction3DBitmask)target;
 
         GUILayout.Space(10);
 

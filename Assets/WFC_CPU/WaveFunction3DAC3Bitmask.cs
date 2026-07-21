@@ -12,12 +12,14 @@ using UnityEditor;
 using Tile3D = WFC3DMapGenerator.Tile3D;
 using Tileset = WFC3DMapGenerator.Tileset;
 
-public class WaveFunction3D : MonoBehaviour
+public class WaveFunction3DBitmaskAC3 : MonoBehaviour
 {
     #region Configuration & Inspector
     [Header("Grid Dimensions")]
-    [SerializeField] private int dimensionsX, dimensionsZ, dimensionsY;
-    
+    [SerializeField] private int dimensionsX;
+    [SerializeField] private int dimensionsZ;
+    [SerializeField] private int dimensionsY;
+
     [Header("Core Tiles")]
     [SerializeField] private Tile3D floorTile;
     [SerializeField] private Tile3D emptyTile;
@@ -35,6 +37,10 @@ public class WaveFunction3D : MonoBehaviour
     private List<Cell3D> gridComponents;
     private Stopwatch stopwatch;
     
+    // AC-3 Constraint Propagation Queue
+    private Queue<int> propagationQueue;
+    private bool[] inQueue;
+    
     public delegate void OnRegenerate();
     public static event OnRegenerate onRegenerate;
     #endregion
@@ -49,14 +55,11 @@ public class WaveFunction3D : MonoBehaviour
     #region Main Generation Flow
     public void StartGeneration()
     {
-        // 1. Clean up any leftovers from previous generations
         ClearGeneration();
 
-        // 2. Initialize tile palette from the ScriptableObject
         tileObjects = tileset.tiles.ToArray();
         cellSize = (int)tileset.tileSize;
 
-        // 3. Prepare the adjacency constraints (Palette Generation)
         ClearNeighbours(ref tileObjects);
         CreateRemainingCells(ref tileObjects);
         DefineNeighbourTiles(ref tileObjects, ref tileObjects);
@@ -67,7 +70,6 @@ public class WaveFunction3D : MonoBehaviour
         stopwatch = new Stopwatch();
         stopwatch.Start();
         
-        // 4. Begin the WFC loop
         GenerateMap();
     }
 
@@ -75,10 +77,9 @@ public class WaveFunction3D : MonoBehaviour
     {
         bool success = false;
         
-        // Loop until a valid map is generated without hitting any dead-ends (incompatibilities)
         while (!success)
         {
-            ResetGrid(); // Reset only the grid components, keeping the precomputed tile palette intact
+            ResetGrid(); 
             
             gridComponents = new List<Cell3D>();
             InitializeGrid();
@@ -89,35 +90,30 @@ public class WaveFunction3D : MonoBehaviour
         }
         
         stopwatch.Stop();
-        print($"Map generated completely in {stopwatch.ElapsedMilliseconds} ms ({stopwatch.ElapsedMilliseconds / 1000f} s)");
+        print($"AC3 Map generated completely in {stopwatch.ElapsedMilliseconds} ms ({stopwatch.ElapsedMilliseconds / 1000f} s)");
     }
 
     private bool RunGenerationLoop()
     {
         int totalCells = dimensionsX * dimensionsZ * dimensionsY;
         
-        // Unrolled recursion: We iteratively scan and collapse the grid instead of using recursive function calls.
-        // This completely prevents StackOverflowExceptions on large grids (e.g., 16x16x16).
+        // Initial AC-3 propagation from Floor and Ceiling constraints
+        if (!PropagateConstraints()) return false;
+
         while (iterations < totalCells)
         {
-            // Propagate constraints across the entire grid
-            for (int y = 0; y < dimensionsY; y++)
-            {
-                for (int z = 0; z < dimensionsZ; z++)
-                {
-                    for (int x = 0; x < dimensionsX; x++)
-                    {
-                        CheckNeighbours(x, y, z);
-                    }
-                }
-            }
-
             // Find the cell with the lowest entropy and collapse it. 
-            // Returns false if a dead-end (incompatibility) is reached.
             if (!CheckEntropy())
             {
-                return false; 
+                return false; // Incompatibility hit during collapse selection
             }
+            
+            // AC-3: Propagate constraints originating from the newly collapsed cell
+            if (!PropagateConstraints())
+            {
+                return false; // Incompatibility hit during propagation
+            }
+            
             iterations++;
         }
         return true;
@@ -134,14 +130,75 @@ public class WaveFunction3D : MonoBehaviour
     }
     #endregion
 
-    #region WFC Constraint Logic (Bitmasks)
+    #region WFC AC-3 Constraint Logic (Bitmasks)
+    
+    private void EnqueueCell(int index)
+    {
+        if (!inQueue[index])
+        {
+            propagationQueue.Enqueue(index);
+            inQueue[index] = true;
+        }
+    }
+
+    private void EnqueueNeighbors(int index)
+    {
+        int z = (index / dimensionsX) % dimensionsZ;
+        int y = index / (dimensionsX * dimensionsZ);
+        int x = index % dimensionsX;
+
+        int up = x + ((z + 1) * dimensionsX) + (y * dimensionsX * dimensionsZ);
+        int down = x + ((z - 1) * dimensionsX) + (y * dimensionsX * dimensionsZ);
+        int right = (x + 1) + (z * dimensionsX) + (y * dimensionsX * dimensionsZ);
+        int left = (x - 1) + (z * dimensionsX) + (y * dimensionsX * dimensionsZ);
+        int above = x + (z * dimensionsX) + ((y + 1) * dimensionsX * dimensionsZ);
+        int below = x + (z * dimensionsX) + ((y - 1) * dimensionsX * dimensionsZ);
+
+        if (z < dimensionsZ - 1) EnqueueCell(up);
+        if (z > 0) EnqueueCell(down);
+        if (x < dimensionsX - 1) EnqueueCell(right);
+        if (x > 0) EnqueueCell(left);
+        if (y < dimensionsY - 1) EnqueueCell(above);
+        if (y > 0) EnqueueCell(below);
+    }
+
+    private bool PropagateConstraints()
+    {
+        // AC-3 Algorithm: Process the queue until empty.
+        // Only re-evaluates cells that have had a neighbor's domain reduced.
+        while (propagationQueue.Count > 0)
+        {
+            int index = propagationQueue.Dequeue();
+            inQueue[index] = false;
+            
+            if (gridComponents[index].collapsed) continue;
+
+            int z = (index / dimensionsX) % dimensionsZ;
+            int y = index / (dimensionsX * dimensionsZ);
+            int x = index % dimensionsX;
+
+            bool changed = CheckNeighbours(x, y, z, index);
+            
+            if (gridComponents[index].entropy == 0)
+            {
+                return false; // Dead-end (incompatibility)
+            }
+            
+            if (changed)
+            {
+                // If this cell's domain was reduced, its neighbors must be re-evaluated
+                EnqueueNeighbors(index);
+            }
+        }
+        return true;
+    }
+
     private void PrecomputeBitmasks()
     {
         // 0 = Up (Z+), 1 = Down (Z-), 2 = Right (X+), 3 = Left (X-), 4 = Above (Y+), 5 = Below (Y-)
         validNeighbors = new ulong[6][];
         for (int i = 0; i < 6; i++) validNeighbors[i] = new ulong[tileObjects.Length];
 
-        // Convert the neighbor lists into fast ulong bitmasks for O(1) constraint propagation
         for (int i = 0; i < tileObjects.Length; i++)
         {
             Tile3D tile = tileObjects[i];
@@ -179,13 +236,10 @@ public class WaveFunction3D : MonoBehaviour
         }
     }
 
-    void CheckNeighbours(int x, int y, int z)
+    bool CheckNeighbours(int x, int y, int z, int index)
     {
         int up, down, left, right, above, below;
-        var index = x + (z * dimensionsX) + (y * dimensionsX * dimensionsZ);
         
-        if (gridComponents[index].collapsed) return;
-
         right = (x + 1) + (z * dimensionsX) + (y * dimensionsX * dimensionsZ);
         left = (x - 1) + (z * dimensionsX) + (y * dimensionsX * dimensionsZ);
         up = x + ((z + 1) * dimensionsX) + (y * dimensionsX * dimensionsZ);
@@ -193,9 +247,9 @@ public class WaveFunction3D : MonoBehaviour
         above = x + (z * dimensionsX) + ((y + 1) * dimensionsX * dimensionsZ);
         below = x + (z * dimensionsX) + ((y - 1) * dimensionsX * dimensionsZ);
 
-        ulong currentMask = gridComponents[index].possibleTilesMask;
+        ulong oldMask = gridComponents[index].possibleTilesMask;
+        ulong currentMask = oldMask;
         
-        // Z- (Down) neighbor restricts what can be placed in this cell
         if (z > 0)
         {
             ulong allowed = 0;
@@ -206,7 +260,6 @@ public class WaveFunction3D : MonoBehaviour
             currentMask &= allowed;
         }
 
-        // X+ (Right) neighbor
         if (x < dimensionsX - 1)
         {
             ulong allowed = 0;
@@ -217,7 +270,6 @@ public class WaveFunction3D : MonoBehaviour
             currentMask &= allowed;
         }
 
-        // Z+ (Up) neighbor
         if (z < dimensionsZ - 1)
         {
             ulong allowed = 0;
@@ -228,7 +280,6 @@ public class WaveFunction3D : MonoBehaviour
             currentMask &= allowed;
         }
 
-        // X- (Left) neighbor
         if (x > 0)
         {
             ulong allowed = 0;
@@ -239,7 +290,6 @@ public class WaveFunction3D : MonoBehaviour
             currentMask &= allowed;
         }
 
-        // Y- (Below) neighbor
         if (y > 0)
         {
             ulong allowed = 0;
@@ -250,7 +300,6 @@ public class WaveFunction3D : MonoBehaviour
             currentMask &= allowed;
         }
 
-        // Y+ (Above) neighbor
         if (y < dimensionsY - 1)
         {
             ulong allowed = 0;
@@ -261,8 +310,14 @@ public class WaveFunction3D : MonoBehaviour
             currentMask &= allowed;
         }
 
-        int newEntropy = CountBits(currentMask);
-        gridComponents[index].RecreateCell(currentMask, newEntropy);
+        if (currentMask != oldMask)
+        {
+            int newEntropy = CountBits(currentMask);
+            gridComponents[index].RecreateCell(currentMask, newEntropy);
+            return true;
+        }
+        
+        return false;
     }
 
     bool CheckEntropy()
@@ -270,15 +325,13 @@ public class WaveFunction3D : MonoBehaviour
         List<Cell3D> tempGrid = new List<Cell3D>(gridComponents);
         tempGrid.RemoveAll(c => c.collapsed);
 
-        if (tempGrid.Count == 0) return true; // Generation complete
+        if (tempGrid.Count == 0) return true;
 
-        // Sort by lowest entropy (fewest possible tiles remaining)
         tempGrid.Sort((a, b) => { return a.entropy - b.entropy; });
 
         int minEntropy = tempGrid[0].entropy;
         int stopIndex = 0;
 
-        // Keep only the cells that share the lowest entropy
         for (int i = 1; i < tempGrid.Count; i++)
         {
             if (tempGrid[i].entropy > minEntropy)
@@ -298,7 +351,6 @@ public class WaveFunction3D : MonoBehaviour
 
     bool CollapseCell(List<Cell3D> tempGrid)
     {
-        // Randomly pick one of the cells tied for lowest entropy
         Cell3D cellToCollapse = tempGrid[UnityEngine.Random.Range(0, tempGrid.Count)];
         cellToCollapse.collapsed = true;
 
@@ -324,7 +376,6 @@ public class WaveFunction3D : MonoBehaviour
         cellToCollapse.entropy = 1;
         Tile3D foundTile = selectedTile;
 
-        // Clean up any placeholder visualization children
         if (cellToCollapse.transform.childCount != 0)
         {
             foreach (Transform child in cellToCollapse.transform)
@@ -333,7 +384,6 @@ public class WaveFunction3D : MonoBehaviour
             }
         }
 
-        // Instantiate the chosen tile prefab
         Tile3D instantiatedTile = Instantiate(foundTile, cellToCollapse.transform.position, Quaternion.identity, cellToCollapse.transform);
         if (instantiatedTile.rotation != Vector3.zero)
         {
@@ -343,12 +393,14 @@ public class WaveFunction3D : MonoBehaviour
         instantiatedTile.gameObject.transform.position += instantiatedTile.positionOffset;
         instantiatedTile.gameObject.SetActive(true);
 
+        // Notify neighbors that this cell has collapsed
+        EnqueueNeighbors(cellToCollapse.index);
+
         return true;
     }
 
     private int CountBits(ulong value)
     {
-        // Brian Kernighan's algorithm to count set bits
         int count = 0;
         while (value != 0)
         {
@@ -362,6 +414,10 @@ public class WaveFunction3D : MonoBehaviour
     #region Grid Initialization
     void InitializeGrid()
     {
+        int totalCells = dimensionsX * dimensionsY * dimensionsZ;
+        propagationQueue = new Queue<int>();
+        inQueue = new bool[totalCells];
+        
         ulong fullMask = (tileObjects.Length == 64) ? ulong.MaxValue : (1UL << tileObjects.Length) - 1;
         for (int y = 0; y < dimensionsY; y++)
         {
@@ -369,8 +425,9 @@ public class WaveFunction3D : MonoBehaviour
             {
                 for (int x = 0; x < dimensionsX; x++)
                 {
+                    int index = x + (z * dimensionsX) + (y * dimensionsX * dimensionsZ);
                     Cell3D newCell = Instantiate(cellObj, new Vector3(x*cellSize, y * cellSize, z*cellSize), Quaternion.identity, gameObject.transform);
-                    newCell.CreateCell(false, fullMask, tileObjects.Length, x + (z * dimensionsX) + (y * dimensionsX * dimensionsZ));
+                    newCell.CreateCell(false, fullMask, tileObjects.Length, index);
                     gridComponents.Add(newCell);
                 }
             }
@@ -406,7 +463,9 @@ public class WaveFunction3D : MonoBehaviour
 
                 instantiatedTile.gameObject.transform.position += instantiatedTile.positionOffset;
                 instantiatedTile.gameObject.SetActive(true);
+                
                 iterations++;
+                EnqueueNeighbors(index); // Propagate constraints from floor
             }
         }
     }
@@ -440,7 +499,9 @@ public class WaveFunction3D : MonoBehaviour
 
                 instantiatedTile.gameObject.transform.position += instantiatedTile.positionOffset;
                 instantiatedTile.gameObject.SetActive(true);
+                
                 iterations++;
+                EnqueueNeighbors(index); // Propagate constraints from ceiling
             }
         }
     }
@@ -483,7 +544,6 @@ public class WaveFunction3D : MonoBehaviour
 
     private void CreateRemainingCells(ref Tile3D[] tileArray)
     {
-        // Dynamically instantiate rotated versions of tiles that have rotation flags enabled.
         List<Tile3D> newTiles = new List<Tile3D>();
         foreach (Tile3D tile in tileArray)
         {
@@ -578,7 +638,6 @@ public class WaveFunction3D : MonoBehaviour
         {
             foreach (Tile3D otherTile in otherTileArray)
             {
-                // HORIZONTAL FACES: Verify matching socket names, exclusion rules, and symmetry/flipping states
                 if (otherTile.downSocket.socket_name == tile.upSocket.socket_name && !tile.excludedNeighboursUp.Contains(otherTile.tileType) && !otherTile.excludedNeighboursDown.Contains(tile.tileType))
                 {
                     if(tile.upSocket.isSymmetric || otherTile.downSocket.isSymmetric || (otherTile.downSocket.isFlipped && !tile.upSocket.isFlipped) || (!otherTile.downSocket.isFlipped && tile.upSocket.isFlipped))
@@ -603,7 +662,6 @@ public class WaveFunction3D : MonoBehaviour
                         tile.leftNeighbours.Add(otherTile);
                 }
 
-                // VERTICAL FACES: Must be rotationally invariant OR share the same rotation index
                 if (otherTile.belowSocket.socket_name == tile.aboveSocket.socket_name)
                 {
                     if((otherTile.belowSocket.rotationallyInvariant || tile.aboveSocket.rotationallyInvariant) || (otherTile.belowSocket.rotationIndex == tile.aboveSocket.rotationIndex))
@@ -648,7 +706,6 @@ public class WaveFunction3D : MonoBehaviour
 
     private void ResetGrid()
     {
-        // Only destroy the map cells, keep the tileObjects (palette) intact for retry
         for (int i = gameObject.transform.childCount - 1; i >= 0; i--)
         {
             DestroyHelper(gameObject.transform.GetChild(i).gameObject);
@@ -665,7 +722,6 @@ public class WaveFunction3D : MonoBehaviour
     {
         ResetGrid();
         
-        // Destroy rotated tiles created dynamically during generation if they exist
         if (tileObjects != null)
         {
             foreach (Tile3D tile in tileObjects)
