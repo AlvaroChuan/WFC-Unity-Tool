@@ -228,7 +228,13 @@ void Kernel_MinEntropy(uint3 id : SV_DispatchThreadID) {
     
     uint e = output[id.x].entropy;
     if(e > 0) {
-        uint encoded = (e << 24) | id.x;
+        // Tie-breaker: generate a fast pseudo-random 6-bit number (0-63)
+        // using the global seed and cell index
+        uint noise = ((id.x * 1973 + seed * 9277) % 64);
+        
+        // Pack: [Entropy: 8 bits] | [Noise: 6 bits] | [Index: 18 bits]
+        // This allows up to 262,144 cells (e.g. 64x64x64 grid).
+        uint encoded = (e << 24) | (noise << 18) | id.x;
         InterlockedMin(GlobalMin[0], encoded);
     }
 }
@@ -243,7 +249,8 @@ void Kernel_Collapse(uint3 id : SV_DispatchThreadID) {
     uint minPacked = GlobalMin[0];
     if(minPacked == 0xFFFFFFFF) return; // Finished
     
-    uint cellIndex = minPacked & 0xFFFFFF;
+    // Unpack using an 18-bit bitmask (0x3FFFF)
+    uint cellIndex = minPacked & 0x3FFFF;
     uint entropy = minPacked >> 24;
     
     if (entropy == 0) {
@@ -251,23 +258,41 @@ void Kernel_Collapse(uint3 id : SV_DispatchThreadID) {
         return;
     }
 
-    uint localSeed = (seed * 9301 + cellIndex * 893234) % 233280;
-    
     output[cellIndex].collapsed = 1;
-
-    uint targetPop = localSeed % entropy;
-    uint currentPop = 0;
-    int selectedTile = -1;
+    uint localSeed = (seed * 9301 + cellIndex * 893234) % 233280;
 
     uint2 mask = output[cellIndex].possibleMask;
+    
+    // 1. Calculate Total Probability Weight
+    uint totalWeight = 0;
+    for(int i = 0; i < 32; i++) {
+        if ((mask.x & (1u << i)) != 0) totalWeight += max(1, tileObjects[i].probability);
+        if ((mask.y & (1u << i)) != 0 && (i + 32) < totalTiles) totalWeight += max(1, tileObjects[i+32].probability);
+    }
+    
+    // 2. Pick a random weight target
+    if (totalWeight == 0) totalWeight = 1; // Safety fallback
+    uint targetWeight = localSeed % totalWeight;
+    uint currentWeight = 0;
+    int selectedTile = -1;
+
+    // 3. Find the tile that reaches the target weight
     for(int t = 0; t < 32; t++) {
         if ((mask.x & (1u << t)) != 0) {
-            if (currentPop == targetPop) { selectedTile = t; break; }
-            currentPop++;
+            currentWeight += max(1, tileObjects[t].probability); // Treat 0 prob as 1
+            if (currentWeight > targetWeight) { selectedTile = t; break; }
         }
         if ((mask.y & (1u << t)) != 0 && (t + 32) < totalTiles) {
-            if (currentPop == targetPop) { selectedTile = t + 32; break; }
-            currentPop++;
+            currentWeight += max(1, tileObjects[t+32].probability);
+            if (currentWeight > targetWeight) { selectedTile = t + 32; break; }
+        }
+    }
+
+    // Safety fallback just in case
+    if (selectedTile == -1) {
+        for(int t = 0; t < 32; t++) {
+            if ((mask.x & (1u << t)) != 0) { selectedTile = t; break; }
+            if ((mask.y & (1u << t)) != 0 && (t + 32) < totalTiles) { selectedTile = t + 32; break; }
         }
     }
 
