@@ -1,0 +1,267 @@
+#pragma kernel CSMain
+
+#define X_EXTENSION 4
+#define Y_EXTENSION 1
+#define Z_EXTENSION 4
+
+struct Cell3DStructBitmask
+{
+    uint collapsed;
+    uint entropy;
+    uint2 possibleMask;
+    int selectedTile;
+};
+
+struct Tile3DStructBitmask
+{
+    int probability;
+    float3 rotation;
+    uint2 validUp;
+    uint2 validDown;
+    uint2 validLeft;
+    uint2 validRight;
+    uint2 validAbove;
+    uint2 validBelow;
+};
+
+uint gridDimensionsX, gridDimensionsY, gridDimensionsZ;
+uint seed;
+uint3 offset;
+int totalTiles;
+
+// Save the cell with less entropy
+int minEntropy;
+int minEntropyIndex;
+
+// Cells to check
+uint3 cellsToCheck[X_EXTENSION * Y_EXTENSION * Z_EXTENSION];
+
+// Buffers
+StructuredBuffer<Tile3DStructBitmask> tileObjects;
+RWStructuredBuffer<Cell3DStructBitmask> output;
+RWStructuredBuffer<int> state;
+
+// Check the neighbours of a cell
+void CheckNeighbours(uint x, uint y, uint z)
+{
+    uint index = x + (z * gridDimensionsX) + (y * gridDimensionsX * gridDimensionsZ);
+    if(output[index].collapsed == 1) return;
+    if(x < 0 || x >= gridDimensionsX || y < 0 || y >= gridDimensionsY || z < 0 || z >= gridDimensionsZ) return;
+
+    uint2 currentMask = output[index].possibleMask;
+    uint2 originalMask = currentMask;
+
+    // Up neighbour (z + 1) -> checks validDown of up neighbour
+    if(z < gridDimensionsZ - 1)
+    {
+        uint upIndex = x + ((z + 1) * gridDimensionsX) + (y * gridDimensionsX * gridDimensionsZ);
+        uint2 upCellMask = output[upIndex].possibleMask;
+        uint2 validFromUp = uint2(0, 0);
+        
+        for(int t = 0; t < 32; t++) {
+            if ((upCellMask.x & (1u << t)) != 0) validFromUp |= tileObjects[t].validDown;
+            if ((upCellMask.y & (1u << t)) != 0 && (t + 32) < totalTiles) validFromUp |= tileObjects[t+32].validDown;
+        }
+        currentMask &= validFromUp;
+    }
+
+    // Down neighbour (z - 1) -> checks validUp of down neighbour
+    if(z > 0)
+    {
+        uint downIndex = x + ((z - 1) * gridDimensionsX) + (y * gridDimensionsX * gridDimensionsZ);
+        uint2 downCellMask = output[downIndex].possibleMask;
+        uint2 validFromDown = uint2(0, 0);
+        
+        for(int t = 0; t < 32; t++) {
+            if ((downCellMask.x & (1u << t)) != 0) validFromDown |= tileObjects[t].validUp;
+            if ((downCellMask.y & (1u << t)) != 0 && (t + 32) < totalTiles) validFromDown |= tileObjects[t+32].validUp;
+        }
+        currentMask &= validFromDown;
+    }
+
+    // Right neighbour (x + 1) -> checks validLeft of right neighbour
+    if(x < gridDimensionsX - 1)
+    {
+        uint rightIndex = (x + 1) + (z * gridDimensionsX) + (y * gridDimensionsX * gridDimensionsZ);
+        uint2 rightCellMask = output[rightIndex].possibleMask;
+        uint2 validFromRight = uint2(0, 0);
+        
+        for(int t = 0; t < 32; t++) {
+            if ((rightCellMask.x & (1u << t)) != 0) validFromRight |= tileObjects[t].validLeft;
+            if ((rightCellMask.y & (1u << t)) != 0 && (t + 32) < totalTiles) validFromRight |= tileObjects[t+32].validLeft;
+        }
+        currentMask &= validFromRight;
+    }
+
+    // Left neighbour (x - 1) -> checks validRight of left neighbour
+    if(x > 0)
+    {
+        uint leftIndex = (x - 1) + (z * gridDimensionsX) + (y * gridDimensionsX * gridDimensionsZ);
+        uint2 leftCellMask = output[leftIndex].possibleMask;
+        uint2 validFromLeft = uint2(0, 0);
+        
+        for(int t = 0; t < 32; t++) {
+            if ((leftCellMask.x & (1u << t)) != 0) validFromLeft |= tileObjects[t].validRight;
+            if ((leftCellMask.y & (1u << t)) != 0 && (t + 32) < totalTiles) validFromLeft |= tileObjects[t+32].validRight;
+        }
+        currentMask &= validFromLeft;
+    }
+
+    // Above neighbour (y + 1) -> checks validBelow of above neighbour
+    if(y < gridDimensionsY - 1)
+    {
+        uint aboveIndex = x + (z * gridDimensionsX) + ((y + 1) * gridDimensionsX * gridDimensionsZ);
+        uint2 aboveCellMask = output[aboveIndex].possibleMask;
+        uint2 validFromAbove = uint2(0, 0);
+        
+        for(int t = 0; t < 32; t++) {
+            if ((aboveCellMask.x & (1u << t)) != 0) validFromAbove |= tileObjects[t].validBelow;
+            if ((aboveCellMask.y & (1u << t)) != 0 && (t + 32) < totalTiles) validFromAbove |= tileObjects[t+32].validBelow;
+        }
+        currentMask &= validFromAbove;
+    }
+
+    // Below neighbour (y - 1) -> checks validAbove of below neighbour
+    if(y > 0)
+    {
+        uint belowIndex = x + (z * gridDimensionsX) + ((y - 1) * gridDimensionsX * gridDimensionsZ);
+        uint2 belowCellMask = output[belowIndex].possibleMask;
+        uint2 validFromBelow = uint2(0, 0);
+        
+        for(int t = 0; t < 32; t++) {
+            if ((belowCellMask.x & (1u << t)) != 0) validFromBelow |= tileObjects[t].validAbove;
+            if ((belowCellMask.y & (1u << t)) != 0 && (t + 32) < totalTiles) validFromBelow |= tileObjects[t+32].validAbove;
+        }
+        currentMask &= validFromBelow;
+    }
+
+    output[index].possibleMask = currentMask;
+    
+    int newEntropy = countbits(currentMask.x) + countbits(currentMask.y);
+    output[index].entropy = newEntropy;
+    
+    if(newEntropy <= minEntropy)
+    {
+        minEntropy = newEntropy;
+        minEntropyIndex = index;
+    }
+}
+
+bool CollapseCell(int cellToCollapseIndex)
+{
+    if(output[cellToCollapseIndex].entropy == 0) return false;
+    
+    seed = (seed * 9301 + cellToCollapseIndex * 893234) % 233280;
+    
+    // Collapse the cell
+    output[cellToCollapseIndex].collapsed = 1;
+
+    int maxPop = output[cellToCollapseIndex].entropy;
+    int targetPop = seed % maxPop;
+    int currentPop = 0;
+    int selectedTile = -1;
+
+    uint2 mask = output[cellToCollapseIndex].possibleMask;
+    for(int t = 0; t < 32; t++) {
+        if ((mask.x & (1u << t)) != 0) {
+            if (currentPop == targetPop) { selectedTile = t; break; }
+            currentPop++;
+        }
+        if ((mask.y & (1u << t)) != 0 && (t + 32) < totalTiles) {
+            if (currentPop == targetPop) { selectedTile = t + 32; break; }
+            currentPop++;
+        }
+    }
+
+    if (selectedTile < 32) {
+        output[cellToCollapseIndex].possibleMask = uint2(1u << selectedTile, 0);
+    } else {
+        output[cellToCollapseIndex].possibleMask = uint2(0, 1u << (selectedTile - 32));
+    }
+    
+    output[cellToCollapseIndex].selectedTile = selectedTile;
+    output[cellToCollapseIndex].entropy = 1;
+    return true;
+}
+
+void GetCellsToCheck(uint3 initialIndex)
+{
+    cellsToCheck[0] = initialIndex.xyz + uint3(0, 0, 0);
+    cellsToCheck[1] = initialIndex.xyz + uint3(1, 0, 0);
+    cellsToCheck[2] = initialIndex.xyz + uint3(2, 0, 0);
+    cellsToCheck[3] = initialIndex.xyz + uint3(3, 0, 0);
+    cellsToCheck[4] = initialIndex.xyz + uint3(0, 0, 1);
+    cellsToCheck[5] = initialIndex.xyz + uint3(1, 0, 1);
+    cellsToCheck[6] = initialIndex.xyz + uint3(2, 0, 1);
+    cellsToCheck[7] = initialIndex.xyz + uint3(3, 0, 1);
+    cellsToCheck[8] = initialIndex.xyz + uint3(0, 0, 2);
+    cellsToCheck[9] = initialIndex.xyz + uint3(1, 0, 2);
+    cellsToCheck[10] = initialIndex.xyz + uint3(2, 0, 2);
+    cellsToCheck[11] = initialIndex.xyz + uint3(3, 0, 2);
+    cellsToCheck[12] = initialIndex.xyz + uint3(0, 0, 3);
+    cellsToCheck[13] = initialIndex.xyz + uint3(1, 0, 3);
+    cellsToCheck[14] = initialIndex.xyz + uint3(2, 0, 3);
+    cellsToCheck[15] = initialIndex.xyz + uint3(3, 0, 3);
+}
+
+void RestartCells()
+{
+    for(uint i = 0; i < X_EXTENSION * Y_EXTENSION * Z_EXTENSION; i++)
+    {
+        if (cellsToCheck[i].x >= 0 && cellsToCheck[i].x < gridDimensionsX
+            && cellsToCheck[i].y >= 0 && cellsToCheck[i].y < gridDimensionsY
+            && cellsToCheck[i].z >= 0 && cellsToCheck[i].z < gridDimensionsZ)
+        {
+            uint index = cellsToCheck[i].x + (cellsToCheck[i].z * gridDimensionsX) + (cellsToCheck[i].y * gridDimensionsX * gridDimensionsZ);
+            output[index].collapsed = 0;
+            
+            // Set all bits up to totalTiles to 1
+            uint2 fullMask = uint2(0, 0);
+            for (int t = 0; t < totalTiles; t++) {
+                if (t < 32) fullMask.x |= (1u << t);
+                else fullMask.y |= (1u << (t - 32));
+            }
+            output[index].possibleMask = fullMask;
+            output[index].entropy = totalTiles;
+            output[index].selectedTile = -1;
+        }
+    }
+}
+
+void UpdateGeneration(uint3 initialIndex)
+{
+    uint iterations = 0;
+    while (iterations < X_EXTENSION * Y_EXTENSION * Z_EXTENSION)
+    {
+        minEntropy = totalTiles + 1;
+        minEntropyIndex = -1;
+        
+        for(int i = 0; i < X_EXTENSION * Y_EXTENSION * Z_EXTENSION; i++)
+        {
+            CheckNeighbours(cellsToCheck[i].x, cellsToCheck[i].y, cellsToCheck[i].z);
+        }
+        iterations++;
+
+        if(minEntropyIndex == -1) continue;
+
+        if(!CollapseCell(minEntropyIndex))
+        {
+            InterlockedAdd(state[0], 1);
+            break;
+        }
+    }
+}
+
+[numthreads(2,1,2)]
+void CSMain (uint3 id : SV_DispatchThreadID)
+{
+    uint3 initialIndex;
+    initialIndex.x = id.x * X_EXTENSION + id.x + offset.x;
+    initialIndex.y = id.y * Y_EXTENSION + id.y + offset.y;
+    initialIndex.z = id.z * Z_EXTENSION + id.z + offset.z;
+    seed += initialIndex.x * 34 + initialIndex.y * 76 + initialIndex.z;
+    
+    GetCellsToCheck(initialIndex);
+    RestartCells();
+    UpdateGeneration(initialIndex);
+}

@@ -1,0 +1,332 @@
+#pragma kernel Kernel_InitializeGrid
+#pragma kernel Kernel_ResetGlobalMin
+#pragma kernel Kernel_MinEntropy
+#pragma kernel Kernel_ResetQueueA
+#pragma kernel Kernel_Collapse
+#pragma kernel Kernel_PrepareA
+#pragma kernel Kernel_PropagateA
+#pragma kernel Kernel_PrepareB
+#pragma kernel Kernel_PropagateB
+
+struct Cell3DStructBitmask
+{
+    uint collapsed;
+    uint entropy;
+    uint2 possibleMask;
+    int selectedTile;
+};
+
+struct Tile3DStructBitmask
+{
+    int probability;
+    float3 rotation;
+    uint2 validUp;
+    uint2 validDown;
+    uint2 validLeft;
+    uint2 validRight;
+    uint2 validAbove;
+    uint2 validBelow;
+};
+
+uint gridDimensionsX, gridDimensionsY, gridDimensionsZ;
+uint totalCells;
+int totalTiles;
+uint seed;
+
+StructuredBuffer<Tile3DStructBitmask> tileObjects;
+RWStructuredBuffer<Cell3DStructBitmask> output;
+
+RWStructuredBuffer<uint> QueueA;
+RWStructuredBuffer<uint> QueueB;
+RWStructuredBuffer<uint> QueueCountA;
+RWStructuredBuffer<uint> QueueCountB;
+RWStructuredBuffer<uint> DispatchArgs;
+RWStructuredBuffer<uint> GlobalMin;
+RWStructuredBuffer<uint> IsEnqueued;
+RWStructuredBuffer<uint> Incompatibilities;
+
+// --- Helper Functions ---
+uint3 IndexToCoord(uint index) {
+    uint x = index % gridDimensionsX;
+    uint y = (index / (gridDimensionsX * gridDimensionsZ)) % gridDimensionsY;
+    uint z = (index / gridDimensionsX) % gridDimensionsZ;
+    return uint3(x,y,z);
+}
+
+uint CoordToIndex(uint x, uint y, uint z) {
+    return x + (z * gridDimensionsX) + (y * gridDimensionsX * gridDimensionsZ);
+}
+
+// Check neighbors and return true if mask shrunk
+bool CheckNeighbours(uint index) {
+    if(output[index].collapsed == 1) return false;
+
+    uint3 coord = IndexToCoord(index);
+    uint x = coord.x; uint y = coord.y; uint z = coord.z;
+
+    uint2 currentMask = output[index].possibleMask;
+    uint2 originalMask = currentMask;
+
+    // Up neighbour (z + 1)
+    if(z < gridDimensionsZ - 1)
+    {
+        uint nIndex = CoordToIndex(x, y, z + 1);
+        uint2 nMask = output[nIndex].possibleMask;
+        uint2 valid = uint2(0, 0);
+        for(int t = 0; t < 32; t++) {
+            if ((nMask.x & (1u << t)) != 0) valid |= tileObjects[t].validDown;
+            if ((nMask.y & (1u << t)) != 0 && (t + 32) < totalTiles) valid |= tileObjects[t+32].validDown;
+        }
+        currentMask &= valid;
+    }
+
+    // Down neighbour (z - 1)
+    if(z > 0)
+    {
+        uint nIndex = CoordToIndex(x, y, z - 1);
+        uint2 nMask = output[nIndex].possibleMask;
+        uint2 valid = uint2(0, 0);
+        for(int t = 0; t < 32; t++) {
+            if ((nMask.x & (1u << t)) != 0) valid |= tileObjects[t].validUp;
+            if ((nMask.y & (1u << t)) != 0 && (t + 32) < totalTiles) valid |= tileObjects[t+32].validUp;
+        }
+        currentMask &= valid;
+    }
+
+    // Right neighbour (x + 1)
+    if(x < gridDimensionsX - 1)
+    {
+        uint nIndex = CoordToIndex(x + 1, y, z);
+        uint2 nMask = output[nIndex].possibleMask;
+        uint2 valid = uint2(0, 0);
+        for(int t = 0; t < 32; t++) {
+            if ((nMask.x & (1u << t)) != 0) valid |= tileObjects[t].validLeft;
+            if ((nMask.y & (1u << t)) != 0 && (t + 32) < totalTiles) valid |= tileObjects[t+32].validLeft;
+        }
+        currentMask &= valid;
+    }
+
+    // Left neighbour (x - 1)
+    if(x > 0)
+    {
+        uint nIndex = CoordToIndex(x - 1, y, z);
+        uint2 nMask = output[nIndex].possibleMask;
+        uint2 valid = uint2(0, 0);
+        for(int t = 0; t < 32; t++) {
+            if ((nMask.x & (1u << t)) != 0) valid |= tileObjects[t].validRight;
+            if ((nMask.y & (1u << t)) != 0 && (t + 32) < totalTiles) valid |= tileObjects[t+32].validRight;
+        }
+        currentMask &= valid;
+    }
+
+    // Above neighbour (y + 1)
+    if(y < gridDimensionsY - 1)
+    {
+        uint nIndex = CoordToIndex(x, y + 1, z);
+        uint2 nMask = output[nIndex].possibleMask;
+        uint2 valid = uint2(0, 0);
+        for(int t = 0; t < 32; t++) {
+            if ((nMask.x & (1u << t)) != 0) valid |= tileObjects[t].validBelow;
+            if ((nMask.y & (1u << t)) != 0 && (t + 32) < totalTiles) valid |= tileObjects[t+32].validBelow;
+        }
+        currentMask &= valid;
+    }
+
+    // Below neighbour (y - 1)
+    if(y > 0)
+    {
+        uint nIndex = CoordToIndex(x, y - 1, z);
+        uint2 nMask = output[nIndex].possibleMask;
+        uint2 valid = uint2(0, 0);
+        for(int t = 0; t < 32; t++) {
+            if ((nMask.x & (1u << t)) != 0) valid |= tileObjects[t].validAbove;
+            if ((nMask.y & (1u << t)) != 0 && (t + 32) < totalTiles) valid |= tileObjects[t+32].validAbove;
+        }
+        currentMask &= valid;
+    }
+
+    if (currentMask.x == originalMask.x && currentMask.y == originalMask.y) {
+        return false;
+    }
+
+    output[index].possibleMask = currentMask;
+    output[index].entropy = countbits(currentMask.x) + countbits(currentMask.y);
+    return true;
+}
+
+// Queue Enqueue Logic
+void TryEnqueueA(uint index) {
+    if(output[index].collapsed == 1) return;
+    uint original;
+    InterlockedExchange(IsEnqueued[index], 1, original);
+    if(original == 0) {
+        uint qIndex;
+        InterlockedAdd(QueueCountA[0], 1, qIndex);
+        QueueA[qIndex] = index;
+    }
+}
+
+void TryEnqueueB(uint index) {
+    if(output[index].collapsed == 1) return;
+    uint original;
+    InterlockedExchange(IsEnqueued[index], 1, original);
+    if(original == 0) {
+        uint qIndex;
+        InterlockedAdd(QueueCountB[0], 1, qIndex);
+        QueueB[qIndex] = index;
+    }
+}
+
+void EnqueueNeighborsA(uint index) {
+    uint3 coord = IndexToCoord(index);
+    if(coord.x > 0) TryEnqueueA(CoordToIndex(coord.x-1, coord.y, coord.z));
+    if(coord.x < gridDimensionsX-1) TryEnqueueA(CoordToIndex(coord.x+1, coord.y, coord.z));
+    if(coord.y > 0) TryEnqueueA(CoordToIndex(coord.x, coord.y-1, coord.z));
+    if(coord.y < gridDimensionsY-1) TryEnqueueA(CoordToIndex(coord.x, coord.y+1, coord.z));
+    if(coord.z > 0) TryEnqueueA(CoordToIndex(coord.x, coord.y, coord.z-1));
+    if(coord.z < gridDimensionsZ-1) TryEnqueueA(CoordToIndex(coord.x, coord.y, coord.z+1));
+}
+
+void EnqueueNeighborsB(uint index) {
+    uint3 coord = IndexToCoord(index);
+    if(coord.x > 0) TryEnqueueB(CoordToIndex(coord.x-1, coord.y, coord.z));
+    if(coord.x < gridDimensionsX-1) TryEnqueueB(CoordToIndex(coord.x+1, coord.y, coord.z));
+    if(coord.y > 0) TryEnqueueB(CoordToIndex(coord.x, coord.y-1, coord.z));
+    if(coord.y < gridDimensionsY-1) TryEnqueueB(CoordToIndex(coord.x, coord.y+1, coord.z));
+    if(coord.z > 0) TryEnqueueB(CoordToIndex(coord.x, coord.y, coord.z-1));
+    if(coord.z < gridDimensionsZ-1) TryEnqueueB(CoordToIndex(coord.x, coord.y, coord.z+1));
+}
+
+// --- Kernels ---
+
+[numthreads(64,1,1)]
+void Kernel_InitializeGrid(uint3 id : SV_DispatchThreadID) {
+    if(id.x >= totalCells) return;
+    
+    IsEnqueued[id.x] = 0;
+    if (output[id.x].collapsed == 1) return; // Ignore CPU pre-collapsed floors
+
+    uint2 fullMask = uint2(0, 0);
+    for (int t = 0; t < totalTiles; t++) {
+        if (t < 32) fullMask.x |= (1u << t);
+        else fullMask.y |= (1u << (t - 32));
+    }
+    output[id.x].possibleMask = fullMask;
+    output[id.x].entropy = totalTiles;
+    output[id.x].selectedTile = -1;
+}
+
+[numthreads(1,1,1)]
+void Kernel_ResetGlobalMin(uint3 id : SV_DispatchThreadID) {
+    GlobalMin[0] = 0xFFFFFFFF;
+}
+
+[numthreads(64,1,1)]
+void Kernel_MinEntropy(uint3 id : SV_DispatchThreadID) {
+    if(id.x >= totalCells) return;
+    if(output[id.x].collapsed == 1) return;
+    
+    uint e = output[id.x].entropy;
+    if(e > 0) {
+        uint encoded = (e << 24) | id.x;
+        InterlockedMin(GlobalMin[0], encoded);
+    }
+}
+
+[numthreads(1,1,1)]
+void Kernel_ResetQueueA(uint3 id : SV_DispatchThreadID) {
+    QueueCountA[0] = 0;
+}
+
+[numthreads(1,1,1)]
+void Kernel_Collapse(uint3 id : SV_DispatchThreadID) {
+    uint minPacked = GlobalMin[0];
+    if(minPacked == 0xFFFFFFFF) return; // Finished
+    
+    uint cellIndex = minPacked & 0xFFFFFF;
+    uint entropy = minPacked >> 24;
+    
+    if (entropy == 0) {
+        InterlockedAdd(Incompatibilities[0], 1);
+        return;
+    }
+
+    uint localSeed = (seed * 9301 + cellIndex * 893234) % 233280;
+    
+    output[cellIndex].collapsed = 1;
+
+    uint targetPop = localSeed % entropy;
+    uint currentPop = 0;
+    int selectedTile = -1;
+
+    uint2 mask = output[cellIndex].possibleMask;
+    for(int t = 0; t < 32; t++) {
+        if ((mask.x & (1u << t)) != 0) {
+            if (currentPop == targetPop) { selectedTile = t; break; }
+            currentPop++;
+        }
+        if ((mask.y & (1u << t)) != 0 && (t + 32) < totalTiles) {
+            if (currentPop == targetPop) { selectedTile = t + 32; break; }
+            currentPop++;
+        }
+    }
+
+    if (selectedTile < 32) {
+        output[cellIndex].possibleMask = uint2(1u << selectedTile, 0);
+    } else {
+        output[cellIndex].possibleMask = uint2(0, 1u << (selectedTile - 32));
+    }
+    
+    output[cellIndex].selectedTile = selectedTile;
+    output[cellIndex].entropy = 1;
+
+    EnqueueNeighborsA(cellIndex);
+}
+
+[numthreads(1,1,1)]
+void Kernel_PrepareA(uint3 id : SV_DispatchThreadID) {
+    uint count = QueueCountA[0];
+    DispatchArgs[0] = (count + 63) / 64; // X thread groups
+    DispatchArgs[1] = 1;
+    DispatchArgs[2] = 1;
+    QueueCountB[0] = 0; // Prepare destination
+}
+
+[numthreads(64,1,1)]
+void Kernel_PropagateA(uint3 id : SV_DispatchThreadID) {
+    if(id.x >= QueueCountA[0]) return;
+    uint cellIndex = QueueA[id.x];
+    IsEnqueued[cellIndex] = 0;
+    
+    if(CheckNeighbours(cellIndex)) {
+        if(output[cellIndex].entropy == 0) {
+            InterlockedAdd(Incompatibilities[0], 1);
+        } else {
+            EnqueueNeighborsB(cellIndex);
+        }
+    }
+}
+
+[numthreads(1,1,1)]
+void Kernel_PrepareB(uint3 id : SV_DispatchThreadID) {
+    uint count = QueueCountB[0];
+    DispatchArgs[0] = (count + 63) / 64; // X thread groups
+    DispatchArgs[1] = 1;
+    DispatchArgs[2] = 1;
+    QueueCountA[0] = 0; // Prepare destination
+}
+
+[numthreads(64,1,1)]
+void Kernel_PropagateB(uint3 id : SV_DispatchThreadID) {
+    if(id.x >= QueueCountB[0]) return;
+    uint cellIndex = QueueB[id.x];
+    IsEnqueued[cellIndex] = 0;
+    
+    if(CheckNeighbours(cellIndex)) {
+        if(output[cellIndex].entropy == 0) {
+            InterlockedAdd(Incompatibilities[0], 1);
+        } else {
+            EnqueueNeighborsA(cellIndex);
+        }
+    }
+}
