@@ -22,13 +22,14 @@ MonoBehaviour:
   - {fileID: 1512903803829752541, guid: 65824fc1621d5954fb6a1ea6eead8c15, type: 3}
   - {fileID: 2097307832941369879, guid: 8377c356eff52f441ab83b6269f532c0, type: 3}
   - {fileID: -2223515546093674773, guid: 4fa566ade8c3d0f4b812e2b8b1e68f5c, type: 3}
+  - {fileID: -2223515546093674773, guid: a518e852102e7e146be9c75dcbec88e4, type: 3}
   - {fileID: -4474382592995978753, guid: 13236ff71a52f49419f4bc429d9bb3e3, type: 3}
   - {fileID: 1730344338009345314, guid: d05de28d34b942e43905cdbf5c8118f1, type: 3}
   - {fileID: 52588310044686958, guid: d30b11addf5e6bf438897135aef77b40, type: 3}
   - {fileID: 4187426750720118590, guid: 85d911cca2c83ba40b7e12900bb75209, type: 3}
   - {fileID: 2591377062762197173, guid: 23d3dc7cbca008f48ab4740bd402b911, type: 3}
   tileSize: 2
-  tileCount: 14
+  tileCount: 15
   tileTypes:
   - Corner
   - Corner interior

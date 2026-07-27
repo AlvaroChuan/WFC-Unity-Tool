@@ -32,6 +32,7 @@ int totalTiles;
 // Save the cell with less entropy
 int minEntropy;
 int minEntropyIndex;
+uint minNoise;
 
 // Cells to check
 uint3 cellsToCheck[X_EXTENSION * Y_EXTENSION * Z_EXTENSION];
@@ -140,10 +141,20 @@ void CheckNeighbours(uint x, uint y, uint z)
     int newEntropy = countbits(currentMask.x) + countbits(currentMask.y);
     output[index].entropy = newEntropy;
     
-    if(newEntropy <= minEntropy)
+    if(newEntropy < minEntropy)
     {
         minEntropy = newEntropy;
+        minNoise = ((index * 1973 + seed * 9277) % 64);
         minEntropyIndex = index;
+    }
+    else if(newEntropy == minEntropy)
+    {
+        uint noise = ((index * 1973 + seed * 9277) % 64);
+        if (noise < minNoise)
+        {
+            minNoise = noise;
+            minEntropyIndex = index;
+        }
     }
 }
 
@@ -152,24 +163,36 @@ bool CollapseCell(int cellToCollapseIndex)
     if(output[cellToCollapseIndex].entropy == 0) return false;
     
     seed = (seed * 9301 + cellToCollapseIndex * 893234) % 233280;
-    
-    // Collapse the cell
     output[cellToCollapseIndex].collapsed = 1;
 
-    int maxPop = output[cellToCollapseIndex].entropy;
-    int targetPop = seed % maxPop;
-    int currentPop = 0;
+    uint2 mask = output[cellToCollapseIndex].possibleMask;
+    
+    uint totalWeight = 0;
+    for(int i = 0; i < 32; i++) {
+        if ((mask.x & (1u << i)) != 0) totalWeight += max(1, tileObjects[i].probability);
+        if ((mask.y & (1u << i)) != 0 && (i + 32) < totalTiles) totalWeight += max(1, tileObjects[i+32].probability);
+    }
+    
+    if (totalWeight == 0) totalWeight = 1;
+    uint targetWeight = seed % totalWeight;
+    uint currentWeight = 0;
     int selectedTile = -1;
 
-    uint2 mask = output[cellToCollapseIndex].possibleMask;
     for(int t = 0; t < 32; t++) {
         if ((mask.x & (1u << t)) != 0) {
-            if (currentPop == targetPop) { selectedTile = t; break; }
-            currentPop++;
+            currentWeight += max(1, tileObjects[t].probability);
+            if (currentWeight > targetWeight) { selectedTile = t; break; }
         }
         if ((mask.y & (1u << t)) != 0 && (t + 32) < totalTiles) {
-            if (currentPop == targetPop) { selectedTile = t + 32; break; }
-            currentPop++;
+            currentWeight += max(1, tileObjects[t+32].probability);
+            if (currentWeight > targetWeight) { selectedTile = t + 32; break; }
+        }
+    }
+
+    if (selectedTile == -1) {
+        for(int t = 0; t < 32; t++) {
+            if ((mask.x & (1u << t)) != 0) { selectedTile = t; break; }
+            if ((mask.y & (1u << t)) != 0 && (t + 32) < totalTiles) { selectedTile = t + 32; break; }
         }
     }
 
@@ -235,6 +258,7 @@ void UpdateGeneration(uint3 initialIndex)
     {
         minEntropy = totalTiles + 1;
         minEntropyIndex = -1;
+        minNoise = 64;
         
         for(int i = 0; i < X_EXTENSION * Y_EXTENSION * Z_EXTENSION; i++)
         {

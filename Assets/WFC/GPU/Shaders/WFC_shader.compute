@@ -49,6 +49,7 @@ uint3 offset;
 // Save the cell with less entropy
 int minEntropy;
 int minEntropyIndex;
+uint minNoise;
 
 // Cells to check
 uint3 cellsToCheck[X_EXTENSION * Y_EXTENSION * Z_EXTENSION];
@@ -238,10 +239,20 @@ void CheckNeighbours(uint x, uint y, uint z)
     // We assign the new options to the cell
     output[index].tileOptions = validOptions;
     output[index].entropy = validOptionsIndex;
-    if(validOptionsIndex <= minEntropy)
+    if(validOptionsIndex < minEntropy)
     {
         minEntropy = validOptionsIndex;
+        minNoise = ((index * 1973 + seed * 9277) % 64);
         minEntropyIndex = index;
+    }
+    else if(validOptionsIndex == minEntropy)
+    {
+        uint noise = ((index * 1973 + seed * 9277) % 64);
+        if (noise < minNoise)
+        {
+            minNoise = noise;
+            minEntropyIndex = index;
+        }
     }
 }
 
@@ -253,13 +264,26 @@ bool CollapseCell(int cellToCollapseIndex)
     // Collapse the cell
     output[cellToCollapseIndex].colapsed = 1;
 
-    int max = 0;
-    for(max = 0; max < MAX_NEIGHBOURS; max++)
+    int maxOptions = 0;
+    uint totalWeight = 0;
+    for(maxOptions = 0; maxOptions < MAX_NEIGHBOURS; maxOptions++)
     {
-        if(output[cellToCollapseIndex].tileOptions[max] == -1) break;
+        int t = output[cellToCollapseIndex].tileOptions[maxOptions];
+        if(t == -1) break;
+        totalWeight += max(1, tileObjects[t].probability);
+    }
+    
+    if (totalWeight == 0) totalWeight = 1;
+    uint targetWeight = seed % totalWeight;
+    uint currentWeight = 0;
+    
+    int temp = output[cellToCollapseIndex].tileOptions[0];
+    for(int i = 0; i < maxOptions; i++) {
+        int t = output[cellToCollapseIndex].tileOptions[i];
+        currentWeight += max(1, tileObjects[t].probability);
+        if (currentWeight > targetWeight) { temp = t; break; }
     }
 
-    int temp = output[cellToCollapseIndex].tileOptions[seed % max];
     ClearArray(output[cellToCollapseIndex].tileOptions);
     output[cellToCollapseIndex].tileOptions[0] = temp;
     output[cellToCollapseIndex].entropy = 1;
@@ -312,6 +336,7 @@ void UpdateGeneration(uint3 initialIndex)
     {
         minEntropy = MAX_NEIGHBOURS + 1;
         minEntropyIndex = -1;
+        minNoise = 64;
         for(int i = 0; i < X_EXTENSION * Y_EXTENSION * Z_EXTENSION; i++)
         {
             CheckNeighbours(cellsToCheck[i].x, cellsToCheck[i].y, cellsToCheck[i].z);

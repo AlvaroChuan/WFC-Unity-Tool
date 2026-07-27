@@ -136,23 +136,36 @@ bool CollapseCell(int cellToCollapseIndex)
     if(output[cellToCollapseIndex].entropy == 0) return false;
     
     seed = (seed * 9301 + cellToCollapseIndex * 893234) % 233280;
-    
     output[cellToCollapseIndex].collapsed = 1;
 
-    int maxPop = output[cellToCollapseIndex].entropy;
-    int targetPop = seed % maxPop;
-    int currentPop = 0;
+    uint2 mask = output[cellToCollapseIndex].possibleMask;
+    
+    uint totalWeight = 0;
+    for(int i = 0; i < 32; i++) {
+        if ((mask.x & (1u << i)) != 0) totalWeight += max(1, tileObjects[i].probability);
+        if ((mask.y & (1u << i)) != 0 && (i + 32) < totalTiles) totalWeight += max(1, tileObjects[i+32].probability);
+    }
+    
+    if (totalWeight == 0) totalWeight = 1;
+    uint targetWeight = seed % totalWeight;
+    uint currentWeight = 0;
     int selectedTile = -1;
 
-    uint2 mask = output[cellToCollapseIndex].possibleMask;
     for(int t = 0; t < 32; t++) {
         if ((mask.x & (1u << t)) != 0) {
-            if (currentPop == targetPop) { selectedTile = t; break; }
-            currentPop++;
+            currentWeight += max(1, tileObjects[t].probability);
+            if (currentWeight > targetWeight) { selectedTile = t; break; }
         }
         if ((mask.y & (1u << t)) != 0 && (t + 32) < totalTiles) {
-            if (currentPop == targetPop) { selectedTile = t + 32; break; }
-            currentPop++;
+            currentWeight += max(1, tileObjects[t+32].probability);
+            if (currentWeight > targetWeight) { selectedTile = t + 32; break; }
+        }
+    }
+
+    if (selectedTile == -1) {
+        for(int t = 0; t < 32; t++) {
+            if ((mask.x & (1u << t)) != 0) { selectedTile = t; break; }
+            if ((mask.y & (1u << t)) != 0 && (t + 32) < totalTiles) { selectedTile = t + 32; break; }
         }
     }
 
@@ -161,9 +174,12 @@ bool CollapseCell(int cellToCollapseIndex)
     } else {
         output[cellToCollapseIndex].possibleMask = uint2(0, 1u << (selectedTile - 32));
     }
-    
-    output[cellToCollapseIndex].selectedTile = selectedTile;
+
     output[cellToCollapseIndex].entropy = 1;
+    output[cellToCollapseIndex].selectedTile = selectedTile;
+    
+    isDirtyMask |= (1u << cellToCollapseIndex);
+
     return true;
 }
 
@@ -248,6 +264,8 @@ void UpdateGeneration(uint3 initialIndex)
         // 2. Select Min Entropy Cell
         minEntropy = totalTiles + 1;
         minEntropyIndex = -1;
+        uint minNoise = 64;
+
         for(int i = 0; i < X_EXTENSION * Y_EXTENSION * Z_EXTENSION; i++) 
         {
             if (cellsToCheck[i].x >= 0 && cellsToCheck[i].x < gridDimensionsX
@@ -255,10 +273,22 @@ void UpdateGeneration(uint3 initialIndex)
                 && cellsToCheck[i].z >= 0 && cellsToCheck[i].z < gridDimensionsZ)
             {
                 uint index = cellsToCheck[i].x + (cellsToCheck[i].z * gridDimensionsX) + (cellsToCheck[i].y * gridDimensionsX * gridDimensionsZ);
-                if (output[index].collapsed == 0 && output[index].entropy < minEntropy) 
+                if (output[index].collapsed == 0) 
                 {
-                    minEntropy = output[index].entropy;
-                    minEntropyIndex = index;
+                    uint e = output[index].entropy;
+                    uint noise = ((index * 1973 + seed * 9277) % 64);
+                    
+                    if (e < minEntropy) 
+                    {
+                        minEntropy = e;
+                        minNoise = noise;
+                        minEntropyIndex = index;
+                    }
+                    else if (e == minEntropy && noise < minNoise)
+                    {
+                        minNoise = noise;
+                        minEntropyIndex = index;
+                    }
                 }
             }
         }
